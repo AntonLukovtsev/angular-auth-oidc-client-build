@@ -1716,9 +1716,9 @@
                     return false;
                 }
                 this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " currentTime: " + new Date().toTimeString());
-                if (!!state) {
-                    this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > inside !!state > currentTime: " + new Date().toTimeString());
-                    return storageObject.state === state;
+                if (state === 'onHandler') {
+                    this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > inside state === 'onHandler' > currentTime: " + new Date().toTimeString());
+                    return storageObject.state === 'onHandler';
                 }
                 this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > after !!state > currentTime: " + new Date().toTimeString());
                 return storageObject.state === 'running' || storageObject.state === 'onHandler';
@@ -1737,7 +1737,7 @@
         FlowsDataService.prototype.setSilentRenewRunningWhenIsNotLauched = function () {
             this.loggerService.logDebug("setSilentRenewRunningWhenIsNotLauched currentTime: " + new Date().toTimeString());
             var lockingModel = {
-                state: null,
+                state: 'running',
                 xKey: 'oidc-process-running-x',
                 yKey: 'oidc-process-running-y'
             };
