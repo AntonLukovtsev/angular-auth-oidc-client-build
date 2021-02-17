@@ -1281,6 +1281,7 @@ class FlowsDataService {
         this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
     }
     resetSilentRenewRunning() {
+        this.loggerService.logDebug('INSIDE RESET SilentRenewRunning !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
         this.storagePersistanceService.write('storageSilentRenewRunning', '');
     }
     isSilentRenewRunning(state = null) {
@@ -1317,7 +1318,7 @@ class FlowsDataService {
             xKey: 'oidc-on-handler-running-x',
             yKey: 'oidc-on-handler-running-y'
         };
-        return this.runMutualExclusionLockingAlgorithm(lockingModel, 'storageSilentRenewRunning');
+        return this.runMutualExclusionLockingAlgorithm(lockingModel);
     }
     setSilentRenewRunningWhenIsNotLauched() {
         this.loggerService.logDebug(`setSilentRenewRunningWhenIsNotLauched currentTime: ${new Date().toTimeString()}`);
@@ -1326,9 +1327,9 @@ class FlowsDataService {
             xKey: 'oidc-process-running-x',
             yKey: 'oidc-process-running-y'
         };
-        return this.runMutualExclusionLockingAlgorithm(lockingModel, 'storageSilentRenewRunning');
+        return this.runMutualExclusionLockingAlgorithm(lockingModel);
     }
-    runMutualExclusionLockingAlgorithm(lockingModel, key) {
+    runMutualExclusionLockingAlgorithm(lockingModel) {
         return new Promise((resolve) => {
             const currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${new Date().getUTCMilliseconds()}`;
             this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > currentRandomId: ${currentRandomId}`);
@@ -1343,8 +1344,11 @@ class FlowsDataService {
                     const storageObject = {
                         state: lockingModel.state,
                         dateOfLaunchedProcessUtc: new Date().toISOString(),
+                        id: currentRandomId
                     };
-                    this.storagePersistanceService.write(key, JSON.stringify(storageObject));
+                    this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
+                    const afterWrite = this.storagePersistanceService.read('storageSilentRenewRunning');
+                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > > currentRandomId: ${currentRandomId} > AFTER WIN WRITE AND CHECK LOCAL STORAGE VALUE ---`, afterWrite);
                     // Release lock
                     this.storagePersistanceService.write(lockingModel.yKey, '');
                     resolve(true);
