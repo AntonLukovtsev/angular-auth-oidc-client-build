@@ -1323,7 +1323,7 @@ class FlowsDataService {
     setSilentRenewRunningWhenIsNotLauched() {
         this.loggerService.logDebug(`setSilentRenewRunningWhenIsNotLauched currentTime: ${new Date().toTimeString()}`);
         const lockingModel = {
-            state: 'running',
+            state: null,
             xKey: 'oidc-process-running-x',
             yKey: 'oidc-process-running-y'
         };
