@@ -1700,6 +1700,10 @@
             if (state === void 0) { state = null; }
             var json = this.storagePersistanceService.read('storageSilentRenewRunning');
             var storageObject = !!json ? JSON.parse(json) : null;
+            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > JSON " + json);
+            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > JSON check !!json " + !!json);
+            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > storageObject", storageObject);
+            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > storageObject !!check = " + !storageObject);
             if (storageObject) {
                 var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
                 var currentDateUtc = Date.parse(new Date().toISOString());
@@ -1763,6 +1767,7 @@
                 };
                 _this.storagePersistanceService.write(lockingModel.xKey, currentRandomId);
                 var readedValueY = _this.storagePersistanceService.read(lockingModel.yKey);
+                _this.loggerService.logDebug("runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY = " + readedValueY + " > currentRandomId: " + currentRandomId);
                 if (!!readedValueY) {
                     _this.loggerService.logDebug("runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY !== '' > currentRandomId: " + currentRandomId);
                     var storageObject = JSON.parse(readedValueY);
@@ -1785,7 +1790,9 @@
                 if (_this.storagePersistanceService.read(lockingModel.xKey) !== currentRandomId) {
                     _this.loggerService.logDebug("runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > before setTimeout > currentRandomId: " + currentRandomId);
                     setTimeout(function () {
-                        if (_this.storagePersistanceService.read(lockingModel.yKey) !== currentRandomId) {
+                        var readedValueYSecondTime = _this.storagePersistanceService.read(lockingModel.yKey);
+                        var readedValueYStorageObject = JSON.parse(readedValueYSecondTime);
+                        if (readedValueYStorageObject.id !== currentRandomId) {
                             _this.loggerService.logDebug("runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout > we LOSE > currentRandomId: " + currentRandomId);
                             resolve(false);
                             return;
