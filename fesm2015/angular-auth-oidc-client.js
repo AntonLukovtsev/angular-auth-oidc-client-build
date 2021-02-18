@@ -1301,18 +1301,18 @@ class FlowsDataService {
                 this.resetSilentRenewRunning();
                 return false;
             }
-            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} currentTime: ${new Date().toTimeString()}`);
+            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} currentTime: ${(new Date()).getTime().toString()}`);
             if (state === 'onHandler') {
-                this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > inside state === 'onHandler' > currentTime: ${new Date().toTimeString()}`);
+                this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > inside state === 'onHandler' > currentTime: ${(new Date()).getTime().toString()}`);
                 return storageObject.state === 'onHandler';
             }
-            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > after !!state > currentTime: ${new Date().toTimeString()}`);
+            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > after !!state > currentTime: ${(new Date()).getTime().toString()}`);
             return storageObject.state === 'running' || storageObject.state === 'onHandler';
         }
         return false;
     }
     setSilentRenewRunningOnHandlerWhenIsNotLauched() {
-        this.loggerService.logDebug(`setSilentRenewRunningOnHandlerWhenIsNotLauched currentTime: ${new Date().toTimeString()}`);
+        this.loggerService.logDebug(`$$$$$$$$$$$$$$$ setSilentRenewRunningOnHandlerWhenIsNotLauched currentTime: ${(new Date()).getTime().toString()}`);
         const lockingModel = {
             state: 'onHandler',
             xKey: 'oidc-on-handler-running-x',
@@ -1321,7 +1321,7 @@ class FlowsDataService {
         return this.runMutualExclusionLockingAlgorithm(lockingModel);
     }
     setSilentRenewRunningWhenIsNotLauched() {
-        this.loggerService.logDebug(`setSilentRenewRunningWhenIsNotLauched currentTime: ${new Date().toTimeString()}`);
+        this.loggerService.logDebug(`$$$$$$$$$$$$$$$ setSilentRenewRunningWhenIsNotLauched currentTime: ${(new Date()).getTime().toString()}`);
         const lockingModel = {
             state: 'running',
             xKey: 'oidc-process-running-x',
@@ -1331,16 +1331,16 @@ class FlowsDataService {
     }
     runMutualExclusionLockingAlgorithm(lockingModel) {
         return new Promise((resolve) => {
-            const currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${new Date().getUTCMilliseconds()}`;
-            this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > currentRandomId: ${currentRandomId}`);
+            const currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${(new Date()).getTime().toString()}`;
+            this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm > currentRandomId: ${currentRandomId} > state "${lockingModel.state}" `);
             const onSuccessLocking = () => {
-                this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > currentRandomId: ${currentRandomId}`);
+                this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > currentRandomId: ${currentRandomId}`);
                 if (this.isSilentRenewRunning(lockingModel.state)) {
-                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > this.isSilentRenewRunning return true we go back > currentRandomId: ${currentRandomId}`);
+                    this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > this.isSilentRenewRunning return true we go back > currentRandomId: ${currentRandomId}`);
                     resolve(false);
                 }
                 else {
-                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: ${currentRandomId}`);
+                    this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: ${currentRandomId}`);
                     const storageObject = {
                         state: lockingModel.state,
                         dateOfLaunchedProcessUtc: new Date().toISOString(),
@@ -1348,7 +1348,7 @@ class FlowsDataService {
                     };
                     this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
                     const afterWrite = this.storagePersistanceService.read('storageSilentRenewRunning');
-                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > > currentRandomId: ${currentRandomId} > AFTER WIN WRITE AND CHECK LOCAL STORAGE VALUE ---`, afterWrite);
+                    this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm > currentRandomId: ${currentRandomId} > state "${lockingModel.state}"  > AFTER WIN WRITE AND CHECK LOCAL STORAGE VALUE ---`, afterWrite);
                     // Release lock
                     this.storagePersistanceService.write(lockingModel.yKey, '');
                     resolve(true);
@@ -1356,9 +1356,9 @@ class FlowsDataService {
             };
             this.storagePersistanceService.write(lockingModel.xKey, currentRandomId);
             const readedValueY = this.storagePersistanceService.read(lockingModel.yKey);
-            this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY = ${readedValueY} > currentRandomId: ${currentRandomId}`);
+            this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY = ${readedValueY} > currentRandomId: ${currentRandomId}`);
             if (!!readedValueY) {
-                this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY !== '' > currentRandomId: ${currentRandomId}`);
+                this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY !== '' > currentRandomId: ${currentRandomId}`);
                 const storageObject = JSON.parse(readedValueY);
                 const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
                 const currentDateUtc = Date.parse(new Date().toISOString());
@@ -1366,7 +1366,7 @@ class FlowsDataService {
                 const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
                 if (isProbablyStuck) {
                     // Release lock
-                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > isProbablyStuck - clear Y key> currentRandomId: ${currentRandomId}`);
+                    this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > isProbablyStuck - clear Y key> currentRandomId: ${currentRandomId}`);
                     this.storagePersistanceService.write(lockingModel.yKey, '');
                 }
                 resolve(false);
@@ -1377,21 +1377,21 @@ class FlowsDataService {
                 dateOfLaunchedProcessUtc: new Date().toISOString()
             }));
             if (this.storagePersistanceService.read(lockingModel.xKey) !== currentRandomId) {
-                this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > before setTimeout > currentRandomId: ${currentRandomId}`);
+                this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > before setTimeout > currentRandomId: ${currentRandomId}`);
                 setTimeout(() => {
                     const readedValueYSecondTime = this.storagePersistanceService.read(lockingModel.yKey);
                     const readedValueYStorageObject = JSON.parse(readedValueYSecondTime);
                     if (readedValueYStorageObject.id !== currentRandomId) {
-                        this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout > we LOSE > currentRandomId: ${currentRandomId}`);
+                        this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout > we LOSE > currentRandomId: ${currentRandomId}`);
                         resolve(false);
                         return;
                     }
-                    this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout > we WIN > currentRandomId: ${currentRandomId}`);
+                    this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout > we WIN > currentRandomId: ${currentRandomId}`);
                     onSuccessLocking();
                 }, Math.round(Math.random() * 100));
             }
             else {
-                this.loggerService.logDebug(`runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > WE WIN ALL CONDITIONS > currentRandomId: ${currentRandomId}`);
+                this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > WE WIN ALL CONDITIONS > currentRandomId: ${currentRandomId}`);
                 onSuccessLocking();
             }
         });
@@ -2904,6 +2904,7 @@ class PeriodicallyTokenCheckService {
             this.loggerService.logDebug('starting silent renew...');
             return from(this.flowsDataService.setSilentRenewRunningWhenIsNotLauched()).pipe(switchMap((isSuccessSet) => {
                 if (isSuccessSet) {
+                    this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS TRUE', (new Date()).getTime().toString());
                     // Retrieve Dynamically Set Custom Params
                     const customParams = this.storagePersistanceService.read('storageCustomRequestParams');
                     if (this.flowHelper.isCurrentFlowCodeFlowWithRefreshTokens()) {
@@ -2912,6 +2913,7 @@ class PeriodicallyTokenCheckService {
                     }
                     return this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
                 }
+                this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS FALSE', (new Date()).getTime().toString());
                 return of(null);
             }));
         }));
