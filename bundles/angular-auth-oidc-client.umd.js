@@ -1788,22 +1788,27 @@
                     return;
                 }
                 _this.storagePersistanceService.write(lockingModel.yKey, currentRandomId);
-                if (_this.storagePersistanceService.read(lockingModel.xKey) !== currentRandomId) {
-                    _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > before setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                    setTimeout(function () {
-                        if (_this.storagePersistanceService.read(lockingModel.yKey) !== currentRandomId) {
-                            _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout > we LOSE > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                            resolve(false);
-                            return;
-                        }
-                        _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout > we WIN > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                setTimeout(function () {
+                    _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE TESTTTT setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                    var readedXKeyValue = _this.storagePersistanceService.read(lockingModel.xKey);
+                    _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE TESTTTT setTimeout > READED XKEY VALUE: " + readedXKeyValue + " > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                    if (readedXKeyValue !== currentRandomId) {
+                        _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > before setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                        setTimeout(function () {
+                            if (_this.storagePersistanceService.read(lockingModel.yKey) !== currentRandomId) {
+                                _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout NUMBER 2> we LOSE > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                                resolve(false);
+                                return;
+                            }
+                            _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout > we WIN > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                            onSuccessLocking();
+                        }, Math.round(Math.random() * 100));
+                    }
+                    else {
+                        _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > WE WIN ALL CONDITIONS > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
                         onSuccessLocking();
-                    }, Math.round(Math.random() * 100));
-                }
-                else {
-                    _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > WE WIN ALL CONDITIONS > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                    onSuccessLocking();
-                }
+                    }
+                }, Math.random() * 100);
             });
         };
         return FlowsDataService;
