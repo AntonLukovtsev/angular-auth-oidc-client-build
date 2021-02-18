@@ -1774,20 +1774,23 @@
                 _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY = " + readedValueY + " > currentRandomId: " + currentRandomId);
                 if (!!readedValueY) {
                     _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY !== '' > currentRandomId: " + currentRandomId);
-                    // const storageObject = JSON.parse(readedValueY);
-                    // const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
-                    // const currentDateUtc = Date.parse(new Date().toISOString());
-                    // const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
-                    // const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
-                    // if (isProbablyStuck){
-                    //    // Release lock
-                    // this.loggerService.logDebug(`$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > isProbablyStuck - clear Y key> currentRandomId: ${currentRandomId}`);
-                    // this.storagePersistanceService.write(lockingModel.yKey, '');
-                    // }
+                    var storageObject = JSON.parse(readedValueY);
+                    var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+                    var currentDateUtc = Date.parse(new Date().toISOString());
+                    var elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+                    var isProbablyStuck = elapsedTimeInMilliseconds > _this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+                    if (isProbablyStuck) {
+                        // Release lock
+                        _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > isProbablyStuck - clear Y key> currentRandomId: " + currentRandomId);
+                        _this.storagePersistanceService.write(lockingModel.yKey, '');
+                    }
                     resolve(false);
                     return;
                 }
-                _this.storagePersistanceService.write(lockingModel.yKey, currentRandomId);
+                _this.storagePersistanceService.write(lockingModel.yKey, JSON.stringify({
+                    id: currentRandomId,
+                    dateOfLaunchedProcessUtc: new Date().toISOString()
+                }));
                 setTimeout(function () {
                     _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE TESTTTT setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
                     var readedXKeyValue = _this.storagePersistanceService.read(lockingModel.xKey);
@@ -1795,7 +1798,10 @@
                     if (readedXKeyValue !== currentRandomId) {
                         _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > before setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
                         setTimeout(function () {
-                            if (_this.storagePersistanceService.read(lockingModel.yKey) !== currentRandomId) {
+                            var readedYInsideSecondTimeout = _this.storagePersistanceService.read(lockingModel.yKey);
+                            var readedYId = !!readedYInsideSecondTimeout ? JSON.parse(readedYInsideSecondTimeout).id : null;
+                            _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout NUMBER 2 > readedYInsideSecondTimeout = " + readedYInsideSecondTimeout + " > readedYId = " + readedYId + " > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString() + " >>>>>>> readedYInsideSecondTimeout", readedYInsideSecondTimeout);
+                            if (readedYId !== currentRandomId) {
                                 _this.loggerService.logDebug("$$$$$$$$$$$$$$$ runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout NUMBER 2> we LOSE > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
                                 resolve(false);
                                 return;
