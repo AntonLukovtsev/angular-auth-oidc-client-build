@@ -1753,12 +1753,7 @@
                         resolve(false);
                     }
                     else {
-                        if (lockingModel.state === 'onHandler') {
-                            _this.loggerService.logWarning("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > SILENT RENEW ISNT RUNNED SO WE EXIT !!!!!!currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                            resolve(false);
-                            return;
-                        }
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
+                                                _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
                         var storageObject = {
                             state: lockingModel.state,
                             dateOfLaunchedProcessUtc: new Date().toISOString(),

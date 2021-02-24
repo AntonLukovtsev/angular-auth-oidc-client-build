@@ -128,11 +128,6 @@ export class FlowsDataService {
                     resolve(false);
                 }
                 else {
-                    if (lockingModel.state === 'onHandler') {
-                        this.loggerService.logWarning(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > SILENT RENEW ISNT RUNNED SO WE EXIT !!!!!!currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                        resolve(false);
-                        return;
-                    }
                     this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
                     const storageObject = {
                         state: lockingModel.state,
