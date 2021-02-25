@@ -1,11 +1,12 @@
 import { isPlatformBrowser, DOCUMENT, CommonModule } from '@angular/common';
 import { HttpClient, HttpHeaders, HttpParams, HttpResponse, HttpClientModule } from '@angular/common/http';
 import { ɵɵinject, ɵɵdefineInjectable, ɵsetClassMetadata, Injectable, PLATFORM_ID, Inject, NgZone, RendererFactory2, ɵɵdefineNgModule, ɵɵdefineInjector, ɵɵsetNgModuleScope, NgModule } from '@angular/core';
-import { ReplaySubject, BehaviorSubject, of, Observable, throwError, Subject, forkJoin, TimeoutError, timer, from } from 'rxjs';
+import { ReplaySubject, BehaviorSubject, of, Observable, throwError, Subject, from, forkJoin, TimeoutError } from 'rxjs';
 import { KEYUTIL, KJUR, hextob64u } from 'jsrsasign-reduced';
-import { take, catchError, switchMap, map, tap, timeout, retryWhen, mergeMap } from 'rxjs/operators';
+import { take, catchError, switchMap, map, tap, timeout } from 'rxjs/operators';
 import { oneLineTrim } from 'common-tags';
 import { Router } from '@angular/router';
+import { BroadcastChannel, createLeaderElection } from 'broadcast-channel';
 
 class HttpBaseService {
     constructor(http) {
@@ -66,6 +67,7 @@ var EventTypes;
     EventTypes[EventTypes["NewAuthorizationResult"] = 4] = "NewAuthorizationResult";
     EventTypes[EventTypes["TokenExpired"] = 5] = "TokenExpired";
     EventTypes[EventTypes["IdTokenExpired"] = 6] = "IdTokenExpired";
+    EventTypes[EventTypes["SilentRenewFinished"] = 7] = "SilentRenewFinished";
 })(EventTypes || (EventTypes = {}));
 
 /**
@@ -1236,9 +1238,16 @@ class FlowsDataService {
         this.storagePersistanceService.write('authStateControl', authStateControl);
     }
     getExistingOrCreateAuthStateControl() {
-        let state = this.randomService.createRandom(40);
+        let state = this.storagePersistanceService.read('authStateControl');
+        if (!state) {
+            state = this.randomService.createRandom(40);
+            this.storagePersistanceService.write('authStateControl', state);
+        }
+        return state;
+    }
+    createAuthStateControl() {
+        const state = this.randomService.createRandom(40);
         this.storagePersistanceService.write('authStateControl', state);
-        this.loggerService.logDebug(`$$$$$$$$$$2 getExistingOrCreateAuthStateControl > was create new state: ${state}`);
         return state;
     }
     setSessionState(sessionState) {
@@ -1279,16 +1288,29 @@ class FlowsDataService {
         this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
     }
     resetSilentRenewRunning() {
-        this.loggerService.logDebug('INSIDE RESET SilentRenewRunning !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
         this.storagePersistanceService.write('storageSilentRenewRunning', '');
     }
-    isSilentRenewRunning(state = null) {
+    // isSilentRenewRunning() {
+    //   const json = this.storagePersistanceService.read('storageSilentRenewRunning');
+    //   const storageObject = !!json ? JSON.parse(json) : null;
+    //   if (storageObject) {
+    //     const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+    //     const currentDateUtc = Date.parse(new Date().toISOString());
+    //     const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+    //     const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+    //     if (isProbablyStuck) {
+    //       this.loggerService.logDebug('silent renew process is probably stuck, state will be reset.');
+    //       this.resetSilentRenewRunning();
+    //       return false;
+    //     }
+    //     this.loggerService.logDebug(`isSilentRenewRunning > currentTime: ${new Date().toTimeString()}`);
+    //     return storageObject.state === 'running';
+    //   }
+    //   return false;
+    // }
+    isSilentRenewRunning() {
         const json = this.storagePersistanceService.read('storageSilentRenewRunning');
         const storageObject = !!json ? JSON.parse(json) : null;
-        this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > JSON ${json}`);
-        this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > JSON check !!json ${!!json}`);
-        this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > storageObject`, storageObject);
-        this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > storageObject !!check = ${!storageObject}`);
         if (storageObject) {
             const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
             const currentDateUtc = Date.parse(new Date().toISOString());
@@ -1299,106 +1321,10 @@ class FlowsDataService {
                 this.resetSilentRenewRunning();
                 return false;
             }
-            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} currentTime: ${(new Date()).getTime().toString()}`);
-            if (state === 'onHandler') {
-                this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > inside state === 'onHandler' > currentTime: ${(new Date()).getTime().toString()}`);
-                return storageObject.state === 'onHandler';
-            }
-            this.loggerService.logDebug(`isSilentRenewRunning > state: ${state} > after !!state > currentTime: ${(new Date()).getTime().toString()}`);
-            return storageObject.state === 'running' || storageObject.state === 'onHandler';
+            this.loggerService.logDebug(`isSilentRenewRunning > currentTime: ${new Date().toTimeString()}`);
+            return storageObject.state === 'running';
         }
         return false;
-    }
-    setSilentRenewRunningOnHandlerWhenIsNotLauched() {
-        this.loggerService.logDebug(`$$$$$$$$$$2 setSilentRenewRunningOnHandlerWhenIsNotLauched currentTime: ${(new Date()).getTime().toString()}`);
-        const lockingModel = {
-            state: 'onHandler',
-            xKey: 'oidc-on-handler-running-x',
-            yKey: 'oidc-on-handler-running-y'
-        };
-        return this.runMutualExclusionLockingAlgorithm(lockingModel);
-    }
-    setSilentRenewRunningWhenIsNotLauched() {
-        this.loggerService.logDebug(`$$$$$$$$$$2 setSilentRenewRunningWhenIsNotLauched currentTime: ${(new Date()).getTime().toString()}`);
-        const lockingModel = {
-            state: 'running',
-            xKey: 'oidc-process-running-x',
-            yKey: 'oidc-process-running-y'
-        };
-        return this.runMutualExclusionLockingAlgorithm(lockingModel);
-    }
-    runMutualExclusionLockingAlgorithm(lockingModel) {
-        return new Promise((resolve) => {
-            const currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${(new Date()).getTime().toString()}`;
-            this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm > currentRandomId: ${currentRandomId} > state "${lockingModel.state}" currentTime: ${(new Date()).getTime().toString()}`);
-            const onSuccessLocking = () => {
-                this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                if (this.isSilentRenewRunning(lockingModel.state)) {
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > this.isSilentRenewRunning return true we go back > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                    resolve(false);
-                }
-                else {
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                    const storageObject = {
-                        state: lockingModel.state,
-                        dateOfLaunchedProcessUtc: new Date().toISOString(),
-                        id: currentRandomId
-                    };
-                    this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
-                    const afterWrite = this.storagePersistanceService.read('storageSilentRenewRunning');
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm > currentRandomId: ${currentRandomId} > state "${lockingModel.state}"  > AFTER WIN WRITE AND CHECK LOCAL STORAGE VALUE --- currentTime: ${(new Date()).getTime().toString()}`, afterWrite);
-                    // Release lock
-                    this.storagePersistanceService.write(lockingModel.yKey, '');
-                    resolve(true);
-                }
-            };
-            this.storagePersistanceService.write(lockingModel.xKey, currentRandomId);
-            const readedValueY = this.storagePersistanceService.read(lockingModel.yKey);
-            this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY = ${readedValueY} > currentRandomId: ${currentRandomId}`);
-            if (!!readedValueY) {
-                this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > readedValueY !== '' > currentRandomId: ${currentRandomId}`);
-                const storageObject = JSON.parse(readedValueY);
-                const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
-                const currentDateUtc = Date.parse(new Date().toISOString());
-                const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
-                const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
-                if (isProbablyStuck) {
-                    // Release lock
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > isProbablyStuck - clear Y key> currentRandomId: ${currentRandomId}`);
-                    this.storagePersistanceService.write(lockingModel.yKey, '');
-                }
-                resolve(false);
-                return;
-            }
-            this.storagePersistanceService.write(lockingModel.yKey, JSON.stringify({
-                id: currentRandomId,
-                dateOfLaunchedProcessUtc: new Date().toISOString()
-            }));
-            setTimeout(() => {
-                this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE TESTTTT setTimeout > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                const readedXKeyValue = this.storagePersistanceService.read(lockingModel.xKey);
-                this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > INSIDE TESTTTT setTimeout > READED XKEY VALUE: ${readedXKeyValue} > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                if (readedXKeyValue !== currentRandomId) {
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > before setTimeout > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                    setTimeout(() => {
-                        const readedYInsideSecondTimeout = this.storagePersistanceService.read(lockingModel.yKey);
-                        const readedYId = !!readedYInsideSecondTimeout ? JSON.parse(readedYInsideSecondTimeout).id : null;
-                        this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout NUMBER 2 > readedYInsideSecondTimeout = ${readedYInsideSecondTimeout} > readedYId = ${readedYId} > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()} >>>>>>> readedYInsideSecondTimeout`, readedYInsideSecondTimeout);
-                        if (readedYId !== currentRandomId) {
-                            this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout NUMBER 2> we LOSE > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                            resolve(false);
-                            return;
-                        }
-                        this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > inside setTimeout > we WIN > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                        onSuccessLocking();
-                    }, Math.round(Math.random() * 100));
-                }
-                else {
-                    this.loggerService.logDebug(`$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state "${lockingModel.state}" > WE WIN ALL CONDITIONS > currentRandomId: ${currentRandomId} currentTime: ${(new Date()).getTime().toString()}`);
-                    onSuccessLocking();
-                }
-            }, Math.random() * 100);
-        });
     }
 }
 FlowsDataService.ɵfac = function FlowsDataService_Factory(t) { return new (t || FlowsDataService)(ɵɵinject(StoragePersistanceService), ɵɵinject(RandomService), ɵɵinject(ConfigurationProvider), ɵɵinject(LoggerService)); };
@@ -1594,7 +1520,7 @@ class UrlService {
         return null;
     }
     createUrlCodeFlowWithSilentRenew(customParams) {
-        const state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+        const state = this.flowsDataService.createAuthStateControl();
         const nonce = this.flowsDataService.createNonce();
         this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + state);
         // code_challenge with "S256"
@@ -1627,7 +1553,7 @@ class UrlService {
         return null;
     }
     createUrlCodeFlowAuthorize(customParams) {
-        const state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+        const state = this.flowsDataService.createAuthStateControl();
         const nonce = this.flowsDataService.createNonce();
         this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
         const redirectUrl = this.getRedirectUrl();
@@ -2487,9 +2413,82 @@ ImplicitFlowCallbackService.ɵprov = ɵɵdefineInjectable({ token: ImplicitFlowC
         args: [{ providedIn: 'root' }]
     }], function () { return [{ type: FlowsService }, { type: ConfigurationProvider }, { type: Router }, { type: FlowsDataService }, { type: IntervallService }]; }, null); })();
 
+class TabsSynchronizationService {
+    constructor(configurationProvider, publicEventsService, loggerService) {
+        this.configurationProvider = configurationProvider;
+        this.publicEventsService = publicEventsService;
+        this.loggerService = loggerService;
+        this._isLeaderSubjectInitialized = false;
+        this._silentRenewFinished$ = new ReplaySubject();
+        this._currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${new Date().getUTCMilliseconds()}`;
+        this.Initialization();
+    }
+    isLeaderCheck() {
+        return new Promise((resolve) => {
+            this.loggerService.logDebug(`isLeaderCheck > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+            if (!this._isLeaderSubjectInitialized) {
+                setTimeout(() => {
+                    if (!this._isLeaderSubjectInitialized) {
+                        this.loggerService.logWarning(`isLeaderCheck > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId} > leader subject doesn't initialized`);
+                        resolve(false);
+                    }
+                    else {
+                        resolve(this._elector.isLeader);
+                    }
+                    return;
+                }, 1000);
+            }
+            setTimeout(() => {
+                const isLeader = this._elector.isLeader;
+                this.loggerService.logWarning(`isLeaderCheck > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId} > inside setTimeout isLeader = ${isLeader}`);
+                resolve(isLeader);
+            }, 1000);
+        });
+    }
+    getSilentRenewFinishedObservable() {
+        return this._silentRenewFinished$.asObservable();
+    }
+    sendSilentRenewFinishedNotification() {
+        if (!this._silentRenewFinishedChannel) {
+            this._silentRenewFinishedChannel = new BroadcastChannel(`${this._prefix}_silent_renew_finished`);
+        }
+        this._silentRenewFinishedChannel.postMessage(`Silent renew finished by _currentRandomId ${this._currentRandomId}`);
+    }
+    Initialization() {
+        var _a;
+        this.loggerService.logDebug('TabsSynchronizationService > Initialization started');
+        this._prefix = ((_a = this.configurationProvider.openIDConfiguration) === null || _a === void 0 ? void 0 : _a.clientId) || '';
+        const channel = new BroadcastChannel(`${this._prefix}_leader`);
+        this._elector = createLeaderElection(channel, {
+            fallbackInterval: 2000,
+            responseTime: 1000,
+        });
+        this._elector.awaitLeadership().then(() => {
+            if (!this._isLeaderSubjectInitialized) {
+                this._isLeaderSubjectInitialized = true;
+            }
+            this.loggerService.logDebug(`this tab is now leader > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+        });
+        this.initializeSilentRenewFinishedChannelWithHandler();
+    }
+    initializeSilentRenewFinishedChannelWithHandler() {
+        this._silentRenewFinishedChannel = new BroadcastChannel(`${this._prefix}_silent_renew_finished`);
+        this._silentRenewFinishedChannel.onmessage = () => {
+            this.loggerService.logDebug(`FROM SILENT RENEW FINISHED RECIVED EVENT > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+            this._silentRenewFinished$.next(true);
+            this.publicEventsService.fireEvent(EventTypes.SilentRenewFinished, true);
+        };
+    }
+}
+TabsSynchronizationService.ɵfac = function TabsSynchronizationService_Factory(t) { return new (t || TabsSynchronizationService)(ɵɵinject(ConfigurationProvider), ɵɵinject(PublicEventsService), ɵɵinject(LoggerService)); };
+TabsSynchronizationService.ɵprov = ɵɵdefineInjectable({ token: TabsSynchronizationService, factory: TabsSynchronizationService.ɵfac });
+/*@__PURE__*/ (function () { ɵsetClassMetadata(TabsSynchronizationService, [{
+        type: Injectable
+    }], function () { return [{ type: ConfigurationProvider }, { type: PublicEventsService }, { type: LoggerService }]; }, null); })();
+
 const IFRAME_FOR_SILENT_RENEW_IDENTIFIER = 'myiFrameForSilentRenew';
 class SilentRenewService {
-    constructor(configurationProvider, iFrameService, flowsService, flowsDataService, authStateService, loggerService, flowHelper, implicitFlowCallbackService, intervallService) {
+    constructor(configurationProvider, iFrameService, flowsService, flowsDataService, authStateService, loggerService, flowHelper, implicitFlowCallbackService, intervallService, tabsSynchronizationService) {
         this.configurationProvider = configurationProvider;
         this.iFrameService = iFrameService;
         this.flowsService = flowsService;
@@ -2499,6 +2498,7 @@ class SilentRenewService {
         this.flowHelper = flowHelper;
         this.implicitFlowCallbackService = implicitFlowCallbackService;
         this.intervallService = intervallService;
+        this.tabsSynchronizationService = tabsSynchronizationService;
         this.refreshSessionWithIFrameCompletedInternal$ = new Subject();
     }
     get refreshSessionWithIFrameCompleted$() {
@@ -2555,29 +2555,21 @@ class SilentRenewService {
         if (!e.detail) {
             return;
         }
-        const isCodeFlow = this.flowHelper.isCurrentFlowCodeFlow();
-        if (isCodeFlow) {
-            const urlParts = e.detail.toString().split('?');
-            this.loggerService.logDebug(`$$$$$$$$$$2 silentRenewEventHandler > urlParts[1]: ${urlParts[1]}`);
-            const params = new HttpParams({
-                fromString: urlParts[1],
-            });
-            this.loggerService.logDebug(`$$$$$$$$$$2 silentRenewEventHandler > params: ${params}`);
-            const state = params.get('state');
-            const currentState = this.flowsDataService.getAuthStateControl();
-            if (currentState !== state) {
-                this.loggerService.logWarning(`$$$$$$$$$$2 silentRenewEventHandler > states don't match currentState ${currentState} state from iframe url ${state}`);
-                return;
-            }
-            this.loggerService.logDebug(`$$$$$$$$$$2 silentRenewEventHandler > AFTER CHECK OF isSilentRenewRunning currentState ${currentState} state from iframe url ${state}`);
+        const urlParts = e.detail.toString().split('?');
+        const params = new HttpParams({
+            fromString: urlParts[1],
+        });
+        const stateFromUrl = params.get('state');
+        const currentState = this.flowsDataService.getAuthStateControl();
+        if (stateFromUrl !== currentState) {
+            this.loggerService.logError(`silentRenewEventHandler > states don't match stateFromUrl: ${stateFromUrl} currentState: ${currentState}`);
         }
-        this.flowsDataService.setSilentRenewRunningOnHandlerWhenIsNotLauched().then((isSuccess) => {
-            if (!isSuccess)
+        this.tabsSynchronizationService.isLeaderCheck().then((isLeader) => {
+            if (!isLeader)
                 return;
             let callback$ = of(null);
             const isCodeFlow = this.flowHelper.isCurrentFlowCodeFlow();
             if (isCodeFlow) {
-                const urlParts = e.detail.toString().split('?');
                 callback$ = this.codeFlowCallbackSilentRenewIframe(urlParts);
             }
             else {
@@ -2586,6 +2578,7 @@ class SilentRenewService {
             callback$.subscribe((callbackContext) => {
                 this.refreshSessionWithIFrameCompletedInternal$.next(callbackContext);
                 this.flowsDataService.resetSilentRenewRunning();
+                this.tabsSynchronizationService.sendSilentRenewFinishedNotification();
             }, (err) => {
                 this.loggerService.logError('Error: ' + err);
                 this.refreshSessionWithIFrameCompletedInternal$.next(null);
@@ -2597,11 +2590,11 @@ class SilentRenewService {
         return this.iFrameService.getExistingIFrame(IFRAME_FOR_SILENT_RENEW_IDENTIFIER);
     }
 }
-SilentRenewService.ɵfac = function SilentRenewService_Factory(t) { return new (t || SilentRenewService)(ɵɵinject(ConfigurationProvider), ɵɵinject(IFrameService), ɵɵinject(FlowsService), ɵɵinject(FlowsDataService), ɵɵinject(AuthStateService), ɵɵinject(LoggerService), ɵɵinject(FlowHelper), ɵɵinject(ImplicitFlowCallbackService), ɵɵinject(IntervallService)); };
+SilentRenewService.ɵfac = function SilentRenewService_Factory(t) { return new (t || SilentRenewService)(ɵɵinject(ConfigurationProvider), ɵɵinject(IFrameService), ɵɵinject(FlowsService), ɵɵinject(FlowsDataService), ɵɵinject(AuthStateService), ɵɵinject(LoggerService), ɵɵinject(FlowHelper), ɵɵinject(ImplicitFlowCallbackService), ɵɵinject(IntervallService), ɵɵinject(TabsSynchronizationService)); };
 SilentRenewService.ɵprov = ɵɵdefineInjectable({ token: SilentRenewService, factory: SilentRenewService.ɵfac });
 /*@__PURE__*/ (function () { ɵsetClassMetadata(SilentRenewService, [{
         type: Injectable
-    }], function () { return [{ type: ConfigurationProvider }, { type: IFrameService }, { type: FlowsService }, { type: FlowsDataService }, { type: AuthStateService }, { type: LoggerService }, { type: FlowHelper }, { type: ImplicitFlowCallbackService }, { type: IntervallService }]; }, null); })();
+    }], function () { return [{ type: ConfigurationProvider }, { type: IFrameService }, { type: FlowsService }, { type: FlowsDataService }, { type: AuthStateService }, { type: LoggerService }, { type: FlowHelper }, { type: ImplicitFlowCallbackService }, { type: IntervallService }, { type: TabsSynchronizationService }]; }, null); })();
 
 class CodeFlowCallbackService {
     constructor(flowsService, flowsDataService, intervallService, configurationProvider, router) {
@@ -2803,7 +2796,7 @@ RefreshSessionRefreshTokenService.ɵprov = ɵɵdefineInjectable({ token: Refresh
 
 const MAX_RETRY_ATTEMPTS = 3;
 class RefreshSessionService {
-    constructor(flowHelper, configurationProvider, flowsDataService, loggerService, silentRenewService, authStateService, authWellKnownService, refreshSessionIframeService, refreshSessionRefreshTokenService) {
+    constructor(flowHelper, configurationProvider, flowsDataService, loggerService, silentRenewService, authStateService, authWellKnownService, refreshSessionIframeService, refreshSessionRefreshTokenService, tabsSynchronizationService) {
         this.flowHelper = flowHelper;
         this.configurationProvider = configurationProvider;
         this.flowsDataService = flowsDataService;
@@ -2813,6 +2806,7 @@ class RefreshSessionService {
         this.authWellKnownService = authWellKnownService;
         this.refreshSessionIframeService = refreshSessionIframeService;
         this.refreshSessionRefreshTokenService = refreshSessionRefreshTokenService;
+        this.tabsSynchronizationService = tabsSynchronizationService;
     }
     forceRefreshSession(customParams) {
         if (this.flowHelper.isCurrentFlowCodeFlowWithRefreshTokens()) {
@@ -2827,19 +2821,54 @@ class RefreshSessionService {
                 return null;
             }));
         }
-        return forkJoin([
-            this.startRefreshSession(customParams),
-            this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(take(1)),
-        ]).pipe(timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), retryWhen(this.timeoutRetryStrategy.bind(this)), map(([_, callbackContext]) => {
-            var _a, _b;
-            const isAuthenticated = this.authStateService.areAuthStorageTokensValid();
-            if (isAuthenticated) {
-                return {
-                    idToken: (_a = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _a === void 0 ? void 0 : _a.id_token,
-                    accessToken: (_b = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _b === void 0 ? void 0 : _b.access_token,
-                };
+        return this.silentRenewCase();
+    }
+    silentRenewCase(customParams) {
+        return from(this.tabsSynchronizationService.isLeaderCheck()).pipe(take(1), switchMap((isLeader) => {
+            if (isLeader) {
+                this.loggerService.logDebug(`forceRefreshSession WE ARE LEADER`);
+                return forkJoin([
+                    this.startRefreshSession(customParams),
+                    this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(take(1)),
+                ]).pipe(timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), map(([_, callbackContext]) => {
+                    var _a, _b;
+                    const isAuthenticated = this.authStateService.areAuthStorageTokensValid();
+                    if (isAuthenticated) {
+                        return {
+                            idToken: (_a = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _a === void 0 ? void 0 : _a.id_token,
+                            accessToken: (_b = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _b === void 0 ? void 0 : _b.access_token,
+                        };
+                    }
+                    return null;
+                }), catchError((error) => {
+                    if (error instanceof TimeoutError) {
+                        this.loggerService.logWarning(`forceRefreshSession WE ARE LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)`);
+                        return this.silentRenewCase(customParams);
+                    }
+                    throw error;
+                }));
             }
-            return null;
+            else {
+                this.loggerService.logDebug(`forceRefreshSession WE ARE NOT NOT NOT LEADER`);
+                return this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(take(1), timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), catchError((error) => {
+                    if (error instanceof TimeoutError) {
+                        this.loggerService.logWarning(`forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)`);
+                        return this.silentRenewCase(customParams);
+                    }
+                    throw error;
+                }), map(() => {
+                    const isAuthenticated = this.authStateService.areAuthStorageTokensValid();
+                    this.loggerService.logDebug(`forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated = ${isAuthenticated}`);
+                    if (isAuthenticated) {
+                        return {
+                            idToken: this.authStateService.getIdToken(),
+                            accessToken: this.authStateService.getAccessToken(),
+                        };
+                    }
+                    this.loggerService.logError(`forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated FALSE WE DONT KNOW WAHT TO DO WITH THIS`);
+                    return null;
+                }));
+            }
         }));
     }
     startRefreshSession(customParams) {
@@ -2864,28 +2893,16 @@ class RefreshSessionService {
             return this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
         }));
     }
-    timeoutRetryStrategy(errorAttempts) {
-        return errorAttempts.pipe(mergeMap((error, index) => {
-            const scalingDuration = 1000;
-            const currentAttempt = index + 1;
-            if (!(error instanceof TimeoutError) || currentAttempt > MAX_RETRY_ATTEMPTS) {
-                return throwError(error);
-            }
-            this.loggerService.logDebug(`forceRefreshSession timeout. Attempt #${currentAttempt}`);
-            this.flowsDataService.resetSilentRenewRunning();
-            return timer(currentAttempt * scalingDuration);
-        }));
-    }
 }
-RefreshSessionService.ɵfac = function RefreshSessionService_Factory(t) { return new (t || RefreshSessionService)(ɵɵinject(FlowHelper), ɵɵinject(ConfigurationProvider), ɵɵinject(FlowsDataService), ɵɵinject(LoggerService), ɵɵinject(SilentRenewService), ɵɵinject(AuthStateService), ɵɵinject(AuthWellKnownService), ɵɵinject(RefreshSessionIframeService), ɵɵinject(RefreshSessionRefreshTokenService)); };
+RefreshSessionService.ɵfac = function RefreshSessionService_Factory(t) { return new (t || RefreshSessionService)(ɵɵinject(FlowHelper), ɵɵinject(ConfigurationProvider), ɵɵinject(FlowsDataService), ɵɵinject(LoggerService), ɵɵinject(SilentRenewService), ɵɵinject(AuthStateService), ɵɵinject(AuthWellKnownService), ɵɵinject(RefreshSessionIframeService), ɵɵinject(RefreshSessionRefreshTokenService), ɵɵinject(TabsSynchronizationService)); };
 RefreshSessionService.ɵprov = ɵɵdefineInjectable({ token: RefreshSessionService, factory: RefreshSessionService.ɵfac, providedIn: 'root' });
 /*@__PURE__*/ (function () { ɵsetClassMetadata(RefreshSessionService, [{
         type: Injectable,
         args: [{ providedIn: 'root' }]
-    }], function () { return [{ type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: SilentRenewService }, { type: AuthStateService }, { type: AuthWellKnownService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }]; }, null); })();
+    }], function () { return [{ type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: SilentRenewService }, { type: AuthStateService }, { type: AuthWellKnownService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: TabsSynchronizationService }]; }, null); })();
 
 class PeriodicallyTokenCheckService {
-    constructor(flowsService, flowHelper, configurationProvider, flowsDataService, loggerService, userService, authStateService, refreshSessionIframeService, refreshSessionRefreshTokenService, intervalService, storagePersistanceService) {
+    constructor(flowsService, flowHelper, configurationProvider, flowsDataService, loggerService, userService, authStateService, refreshSessionIframeService, refreshSessionRefreshTokenService, intervalService, storagePersistanceService, tabsSynchronizationService) {
         this.flowsService = flowsService;
         this.flowHelper = flowHelper;
         this.configurationProvider = configurationProvider;
@@ -2897,6 +2914,7 @@ class PeriodicallyTokenCheckService {
         this.refreshSessionRefreshTokenService = refreshSessionRefreshTokenService;
         this.intervalService = intervalService;
         this.storagePersistanceService = storagePersistanceService;
+        this.tabsSynchronizationService = tabsSynchronizationService;
     }
     startTokenValidationPeriodically(repeatAfterSeconds) {
         if (!!this.intervalService.runTokenValidationRunning || !this.configurationProvider.openIDConfiguration.silentRenew) {
@@ -2922,9 +2940,9 @@ class PeriodicallyTokenCheckService {
                 return of(null);
             }
             this.loggerService.logDebug('starting silent renew...');
-            return from(this.flowsDataService.setSilentRenewRunningWhenIsNotLauched()).pipe(switchMap((isSuccessSet) => {
-                if (isSuccessSet) {
-                    this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS TRUE', (new Date()).getTime().toString());
+            return from(this.tabsSynchronizationService.isLeaderCheck()).pipe(take(1), switchMap((isLeader) => {
+                if (isLeader && !this.flowsDataService.isSilentRenewRunning()) {
+                    this.flowsDataService.setSilentRenewRunning();
                     // Retrieve Dynamically Set Custom Params
                     const customParams = this.storagePersistanceService.read('storageCustomRequestParams');
                     if (this.flowHelper.isCurrentFlowCodeFlowWithRefreshTokens()) {
@@ -2933,7 +2951,6 @@ class PeriodicallyTokenCheckService {
                     }
                     return this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
                 }
-                this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS FALSE', (new Date()).getTime().toString());
                 return of(null);
             }));
         }));
@@ -2952,12 +2969,12 @@ class PeriodicallyTokenCheckService {
         });
     }
 }
-PeriodicallyTokenCheckService.ɵfac = function PeriodicallyTokenCheckService_Factory(t) { return new (t || PeriodicallyTokenCheckService)(ɵɵinject(FlowsService), ɵɵinject(FlowHelper), ɵɵinject(ConfigurationProvider), ɵɵinject(FlowsDataService), ɵɵinject(LoggerService), ɵɵinject(UserService), ɵɵinject(AuthStateService), ɵɵinject(RefreshSessionIframeService), ɵɵinject(RefreshSessionRefreshTokenService), ɵɵinject(IntervallService), ɵɵinject(StoragePersistanceService)); };
+PeriodicallyTokenCheckService.ɵfac = function PeriodicallyTokenCheckService_Factory(t) { return new (t || PeriodicallyTokenCheckService)(ɵɵinject(FlowsService), ɵɵinject(FlowHelper), ɵɵinject(ConfigurationProvider), ɵɵinject(FlowsDataService), ɵɵinject(LoggerService), ɵɵinject(UserService), ɵɵinject(AuthStateService), ɵɵinject(RefreshSessionIframeService), ɵɵinject(RefreshSessionRefreshTokenService), ɵɵinject(IntervallService), ɵɵinject(StoragePersistanceService), ɵɵinject(TabsSynchronizationService)); };
 PeriodicallyTokenCheckService.ɵprov = ɵɵdefineInjectable({ token: PeriodicallyTokenCheckService, factory: PeriodicallyTokenCheckService.ɵfac, providedIn: 'root' });
 /*@__PURE__*/ (function () { ɵsetClassMetadata(PeriodicallyTokenCheckService, [{
         type: Injectable,
         args: [{ providedIn: 'root' }]
-    }], function () { return [{ type: FlowsService }, { type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: UserService }, { type: AuthStateService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: IntervallService }, { type: StoragePersistanceService }]; }, null); })();
+    }], function () { return [{ type: FlowsService }, { type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: UserService }, { type: AuthStateService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: IntervallService }, { type: StoragePersistanceService }, { type: TabsSynchronizationService }]; }, null); })();
 
 class PopUpService {
     constructor() {
@@ -3650,6 +3667,7 @@ class AuthModule {
                     provide: AbstractSecurityStorage,
                     useClass: token.storage || BrowserStorageService,
                 },
+                TabsSynchronizationService,
             ],
         };
     }

@@ -1,8 +1,8 @@
 (function (global, factory) {
-    typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('@angular/common'), require('@angular/common/http'), require('@angular/core'), require('rxjs'), require('jsrsasign-reduced'), require('rxjs/operators'), require('common-tags'), require('@angular/router')) :
-    typeof define === 'function' && define.amd ? define('angular-auth-oidc-client', ['exports', '@angular/common', '@angular/common/http', '@angular/core', 'rxjs', 'jsrsasign-reduced', 'rxjs/operators', 'common-tags', '@angular/router'], factory) :
-    (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global['angular-auth-oidc-client'] = {}, global.ng.common, global.ng.common.http, global.ng.core, global.rxjs, global['jsrsasign-reduced'], global.rxjs.operators, global['common-tags'], global.ng.router));
-}(this, (function (exports, common, i1, i0, rxjs, jsrsasignReduced, operators, commonTags, i3) { 'use strict';
+    typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('@angular/common'), require('@angular/common/http'), require('@angular/core'), require('rxjs'), require('jsrsasign-reduced'), require('rxjs/operators'), require('common-tags'), require('@angular/router'), require('broadcast-channel')) :
+    typeof define === 'function' && define.amd ? define('angular-auth-oidc-client', ['exports', '@angular/common', '@angular/common/http', '@angular/core', 'rxjs', 'jsrsasign-reduced', 'rxjs/operators', 'common-tags', '@angular/router', 'broadcast-channel'], factory) :
+    (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global['angular-auth-oidc-client'] = {}, global.ng.common, global.ng.common.http, global.ng.core, global.rxjs, global['jsrsasign-reduced'], global.rxjs.operators, global['common-tags'], global.ng.router, global['broadcast-channel']));
+}(this, (function (exports, common, i1, i0, rxjs, jsrsasignReduced, operators, commonTags, i3, broadcastChannel) { 'use strict';
 
     var HttpBaseService = /** @class */ (function () {
         function HttpBaseService(http) {
@@ -68,6 +68,7 @@
         EventTypes[EventTypes["NewAuthorizationResult"] = 4] = "NewAuthorizationResult";
         EventTypes[EventTypes["TokenExpired"] = 5] = "TokenExpired";
         EventTypes[EventTypes["IdTokenExpired"] = 6] = "IdTokenExpired";
+        EventTypes[EventTypes["SilentRenewFinished"] = 7] = "SilentRenewFinished";
     })(exports.EventTypes || (exports.EventTypes = {}));
 
     /**
@@ -1649,9 +1650,16 @@
             this.storagePersistanceService.write('authStateControl', authStateControl);
         };
         FlowsDataService.prototype.getExistingOrCreateAuthStateControl = function () {
+            var state = this.storagePersistanceService.read('authStateControl');
+            if (!state) {
+                state = this.randomService.createRandom(40);
+                this.storagePersistanceService.write('authStateControl', state);
+            }
+            return state;
+        };
+        FlowsDataService.prototype.createAuthStateControl = function () {
             var state = this.randomService.createRandom(40);
             this.storagePersistanceService.write('authStateControl', state);
-            this.loggerService.logDebug("$$$$$$$$$$2 getExistingOrCreateAuthStateControl > was create new state: " + state);
             return state;
         };
         FlowsDataService.prototype.setSessionState = function (sessionState) {
@@ -1692,17 +1700,29 @@
             this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
         };
         FlowsDataService.prototype.resetSilentRenewRunning = function () {
-            this.loggerService.logDebug('INSIDE RESET SilentRenewRunning !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
             this.storagePersistanceService.write('storageSilentRenewRunning', '');
         };
-        FlowsDataService.prototype.isSilentRenewRunning = function (state) {
-            if (state === void 0) { state = null; }
+        // isSilentRenewRunning() {
+        //   const json = this.storagePersistanceService.read('storageSilentRenewRunning');
+        //   const storageObject = !!json ? JSON.parse(json) : null;
+        //   if (storageObject) {
+        //     const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+        //     const currentDateUtc = Date.parse(new Date().toISOString());
+        //     const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+        //     const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+        //     if (isProbablyStuck) {
+        //       this.loggerService.logDebug('silent renew process is probably stuck, state will be reset.');
+        //       this.resetSilentRenewRunning();
+        //       return false;
+        //     }
+        //     this.loggerService.logDebug(`isSilentRenewRunning > currentTime: ${new Date().toTimeString()}`);
+        //     return storageObject.state === 'running';
+        //   }
+        //   return false;
+        // }
+        FlowsDataService.prototype.isSilentRenewRunning = function () {
             var json = this.storagePersistanceService.read('storageSilentRenewRunning');
             var storageObject = !!json ? JSON.parse(json) : null;
-            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > JSON " + json);
-            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > JSON check !!json " + !!json);
-            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > storageObject", storageObject);
-            this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > storageObject !!check = " + !storageObject);
             if (storageObject) {
                 var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
                 var currentDateUtc = Date.parse(new Date().toISOString());
@@ -1713,107 +1733,10 @@
                     this.resetSilentRenewRunning();
                     return false;
                 }
-                this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " currentTime: " + (new Date()).getTime().toString());
-                if (state === 'onHandler') {
-                    this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > inside state === 'onHandler' > currentTime: " + (new Date()).getTime().toString());
-                    return storageObject.state === 'onHandler';
-                }
-                this.loggerService.logDebug("isSilentRenewRunning > state: " + state + " > after !!state > currentTime: " + (new Date()).getTime().toString());
-                return storageObject.state === 'running' || storageObject.state === 'onHandler';
+                this.loggerService.logDebug("isSilentRenewRunning > currentTime: " + new Date().toTimeString());
+                return storageObject.state === 'running';
             }
             return false;
-        };
-        FlowsDataService.prototype.setSilentRenewRunningOnHandlerWhenIsNotLauched = function () {
-            this.loggerService.logDebug("$$$$$$$$$$2 setSilentRenewRunningOnHandlerWhenIsNotLauched currentTime: " + (new Date()).getTime().toString());
-            var lockingModel = {
-                state: 'onHandler',
-                xKey: 'oidc-on-handler-running-x',
-                yKey: 'oidc-on-handler-running-y'
-            };
-            return this.runMutualExclusionLockingAlgorithm(lockingModel);
-        };
-        FlowsDataService.prototype.setSilentRenewRunningWhenIsNotLauched = function () {
-            this.loggerService.logDebug("$$$$$$$$$$2 setSilentRenewRunningWhenIsNotLauched currentTime: " + (new Date()).getTime().toString());
-            var lockingModel = {
-                state: 'running',
-                xKey: 'oidc-process-running-x',
-                yKey: 'oidc-process-running-y'
-            };
-            return this.runMutualExclusionLockingAlgorithm(lockingModel);
-        };
-        FlowsDataService.prototype.runMutualExclusionLockingAlgorithm = function (lockingModel) {
-            var _this = this;
-            return new Promise(function (resolve) {
-                var currentRandomId = Math.random().toString(36).substr(2, 9) + "_" + (new Date()).getTime().toString();
-                _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm > currentRandomId: " + currentRandomId + " > state \"" + lockingModel.state + "\" currentTime: " + (new Date()).getTime().toString());
-                var onSuccessLocking = function () {
-                    _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                    if (_this.isSilentRenewRunning(lockingModel.state)) {
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > this.isSilentRenewRunning return true we go back > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                        resolve(false);
-                    }
-                    else {
-                                                _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE onSuccessLocking > VICTORY !!!! WE WIN AND SET VALUE> currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                        var storageObject = {
-                            state: lockingModel.state,
-                            dateOfLaunchedProcessUtc: new Date().toISOString(),
-                            id: currentRandomId
-                        };
-                        _this.storagePersistanceService.write('storageSilentRenewRunning', JSON.stringify(storageObject));
-                        var afterWrite = _this.storagePersistanceService.read('storageSilentRenewRunning');
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm > currentRandomId: " + currentRandomId + " > state \"" + lockingModel.state + "\"  > AFTER WIN WRITE AND CHECK LOCAL STORAGE VALUE --- currentTime: " + (new Date()).getTime().toString(), afterWrite);
-                        // Release lock
-                        _this.storagePersistanceService.write(lockingModel.yKey, '');
-                        resolve(true);
-                    }
-                };
-                _this.storagePersistanceService.write(lockingModel.xKey, currentRandomId);
-                var readedValueY = _this.storagePersistanceService.read(lockingModel.yKey);
-                _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY = " + readedValueY + " > currentRandomId: " + currentRandomId);
-                if (!!readedValueY) {
-                    _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > readedValueY !== '' > currentRandomId: " + currentRandomId);
-                    var storageObject = JSON.parse(readedValueY);
-                    var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
-                    var currentDateUtc = Date.parse(new Date().toISOString());
-                    var elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
-                    var isProbablyStuck = elapsedTimeInMilliseconds > _this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
-                    if (isProbablyStuck) {
-                        // Release lock
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > isProbablyStuck - clear Y key> currentRandomId: " + currentRandomId);
-                        _this.storagePersistanceService.write(lockingModel.yKey, '');
-                    }
-                    resolve(false);
-                    return;
-                }
-                _this.storagePersistanceService.write(lockingModel.yKey, JSON.stringify({
-                    id: currentRandomId,
-                    dateOfLaunchedProcessUtc: new Date().toISOString()
-                }));
-                setTimeout(function () {
-                    _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE TESTTTT setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                    var readedXKeyValue = _this.storagePersistanceService.read(lockingModel.xKey);
-                    _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > INSIDE TESTTTT setTimeout > READED XKEY VALUE: " + readedXKeyValue + " > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                    if (readedXKeyValue !== currentRandomId) {
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > before setTimeout > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                        setTimeout(function () {
-                            var readedYInsideSecondTimeout = _this.storagePersistanceService.read(lockingModel.yKey);
-                            var readedYId = !!readedYInsideSecondTimeout ? JSON.parse(readedYInsideSecondTimeout).id : null;
-                            _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout NUMBER 2 > readedYInsideSecondTimeout = " + readedYInsideSecondTimeout + " > readedYId = " + readedYId + " > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString() + " >>>>>>> readedYInsideSecondTimeout", readedYInsideSecondTimeout);
-                            if (readedYId !== currentRandomId) {
-                                _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout NUMBER 2> we LOSE > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                                resolve(false);
-                                return;
-                            }
-                            _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > inside setTimeout > we WIN > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                            onSuccessLocking();
-                        }, Math.round(Math.random() * 100));
-                    }
-                    else {
-                        _this.loggerService.logDebug("$$$$$$$$$$2 runMutualExclusionLockingAlgorithm - state \"" + lockingModel.state + "\" > WE WIN ALL CONDITIONS > currentRandomId: " + currentRandomId + " currentTime: " + (new Date()).getTime().toString());
-                        onSuccessLocking();
-                    }
-                }, Math.random() * 100);
-            });
         };
         return FlowsDataService;
     }());
@@ -2030,7 +1953,7 @@
             return null;
         };
         UrlService.prototype.createUrlCodeFlowWithSilentRenew = function (customParams) {
-            var state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+            var state = this.flowsDataService.createAuthStateControl();
             var nonce = this.flowsDataService.createNonce();
             this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + state);
             // code_challenge with "S256"
@@ -2063,7 +1986,7 @@
             return null;
         };
         UrlService.prototype.createUrlCodeFlowAuthorize = function (customParams) {
-            var state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+            var state = this.flowsDataService.createAuthStateControl();
             var nonce = this.flowsDataService.createNonce();
             this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
             var redirectUrl = this.getRedirectUrl();
@@ -2973,9 +2896,88 @@
             }], function () { return [{ type: FlowsService }, { type: ConfigurationProvider }, { type: i3.Router }, { type: FlowsDataService }, { type: IntervallService }]; }, null);
     })();
 
+    var TabsSynchronizationService = /** @class */ (function () {
+        function TabsSynchronizationService(configurationProvider, publicEventsService, loggerService) {
+            this.configurationProvider = configurationProvider;
+            this.publicEventsService = publicEventsService;
+            this.loggerService = loggerService;
+            this._isLeaderSubjectInitialized = false;
+            this._silentRenewFinished$ = new rxjs.ReplaySubject();
+            this._currentRandomId = Math.random().toString(36).substr(2, 9) + "_" + new Date().getUTCMilliseconds();
+            this.Initialization();
+        }
+        TabsSynchronizationService.prototype.isLeaderCheck = function () {
+            var _this = this;
+            return new Promise(function (resolve) {
+                _this.loggerService.logDebug("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
+                if (!_this._isLeaderSubjectInitialized) {
+                    setTimeout(function () {
+                        if (!_this._isLeaderSubjectInitialized) {
+                            _this.loggerService.logWarning("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId + " > leader subject doesn't initialized");
+                            resolve(false);
+                        }
+                        else {
+                            resolve(_this._elector.isLeader);
+                        }
+                        return;
+                    }, 1000);
+                }
+                setTimeout(function () {
+                    var isLeader = _this._elector.isLeader;
+                    _this.loggerService.logWarning("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId + " > inside setTimeout isLeader = " + isLeader);
+                    resolve(isLeader);
+                }, 1000);
+            });
+        };
+        TabsSynchronizationService.prototype.getSilentRenewFinishedObservable = function () {
+            return this._silentRenewFinished$.asObservable();
+        };
+        TabsSynchronizationService.prototype.sendSilentRenewFinishedNotification = function () {
+            if (!this._silentRenewFinishedChannel) {
+                this._silentRenewFinishedChannel = new broadcastChannel.BroadcastChannel(this._prefix + "_silent_renew_finished");
+            }
+            this._silentRenewFinishedChannel.postMessage("Silent renew finished by _currentRandomId " + this._currentRandomId);
+        };
+        TabsSynchronizationService.prototype.Initialization = function () {
+            var _this = this;
+            var _a;
+            this.loggerService.logDebug('TabsSynchronizationService > Initialization started');
+            this._prefix = ((_a = this.configurationProvider.openIDConfiguration) === null || _a === void 0 ? void 0 : _a.clientId) || '';
+            var channel = new broadcastChannel.BroadcastChannel(this._prefix + "_leader");
+            this._elector = broadcastChannel.createLeaderElection(channel, {
+                fallbackInterval: 2000,
+                responseTime: 1000,
+            });
+            this._elector.awaitLeadership().then(function () {
+                if (!_this._isLeaderSubjectInitialized) {
+                    _this._isLeaderSubjectInitialized = true;
+                }
+                _this.loggerService.logDebug("this tab is now leader > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
+            });
+            this.initializeSilentRenewFinishedChannelWithHandler();
+        };
+        TabsSynchronizationService.prototype.initializeSilentRenewFinishedChannelWithHandler = function () {
+            var _this = this;
+            this._silentRenewFinishedChannel = new broadcastChannel.BroadcastChannel(this._prefix + "_silent_renew_finished");
+            this._silentRenewFinishedChannel.onmessage = function () {
+                _this.loggerService.logDebug("FROM SILENT RENEW FINISHED RECIVED EVENT > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
+                _this._silentRenewFinished$.next(true);
+                _this.publicEventsService.fireEvent(exports.EventTypes.SilentRenewFinished, true);
+            };
+        };
+        return TabsSynchronizationService;
+    }());
+    TabsSynchronizationService.ɵfac = function TabsSynchronizationService_Factory(t) { return new (t || TabsSynchronizationService)(i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(PublicEventsService), i0.ɵɵinject(LoggerService)); };
+    TabsSynchronizationService.ɵprov = i0.ɵɵdefineInjectable({ token: TabsSynchronizationService, factory: TabsSynchronizationService.ɵfac });
+    /*@__PURE__*/ (function () {
+        i0.ɵsetClassMetadata(TabsSynchronizationService, [{
+                type: i0.Injectable
+            }], function () { return [{ type: ConfigurationProvider }, { type: PublicEventsService }, { type: LoggerService }]; }, null);
+    })();
+
     var IFRAME_FOR_SILENT_RENEW_IDENTIFIER = 'myiFrameForSilentRenew';
     var SilentRenewService = /** @class */ (function () {
-        function SilentRenewService(configurationProvider, iFrameService, flowsService, flowsDataService, authStateService, loggerService, flowHelper, implicitFlowCallbackService, intervallService) {
+        function SilentRenewService(configurationProvider, iFrameService, flowsService, flowsDataService, authStateService, loggerService, flowHelper, implicitFlowCallbackService, intervallService, tabsSynchronizationService) {
             this.configurationProvider = configurationProvider;
             this.iFrameService = iFrameService;
             this.flowsService = flowsService;
@@ -2985,6 +2987,7 @@
             this.flowHelper = flowHelper;
             this.implicitFlowCallbackService = implicitFlowCallbackService;
             this.intervallService = intervallService;
+            this.tabsSynchronizationService = tabsSynchronizationService;
             this.refreshSessionWithIFrameCompletedInternal$ = new rxjs.Subject();
         }
         Object.defineProperty(SilentRenewService.prototype, "refreshSessionWithIFrameCompleted$", {
@@ -3047,29 +3050,21 @@
             if (!e.detail) {
                 return;
             }
-            var isCodeFlow = this.flowHelper.isCurrentFlowCodeFlow();
-            if (isCodeFlow) {
-                var urlParts = e.detail.toString().split('?');
-                this.loggerService.logDebug("$$$$$$$$$$2 silentRenewEventHandler > urlParts[1]: " + urlParts[1]);
-                var params = new i1.HttpParams({
-                    fromString: urlParts[1],
-                });
-                this.loggerService.logDebug("$$$$$$$$$$2 silentRenewEventHandler > params: " + params);
-                var state = params.get('state');
-                var currentState = this.flowsDataService.getAuthStateControl();
-                if (currentState !== state) {
-                    this.loggerService.logWarning("$$$$$$$$$$2 silentRenewEventHandler > states don't match currentState " + currentState + " state from iframe url " + state);
-                    return;
-                }
-                this.loggerService.logDebug("$$$$$$$$$$2 silentRenewEventHandler > AFTER CHECK OF isSilentRenewRunning currentState " + currentState + " state from iframe url " + state);
+            var urlParts = e.detail.toString().split('?');
+            var params = new i1.HttpParams({
+                fromString: urlParts[1],
+            });
+            var stateFromUrl = params.get('state');
+            var currentState = this.flowsDataService.getAuthStateControl();
+            if (stateFromUrl !== currentState) {
+                this.loggerService.logError("silentRenewEventHandler > states don't match stateFromUrl: " + stateFromUrl + " currentState: " + currentState);
             }
-            this.flowsDataService.setSilentRenewRunningOnHandlerWhenIsNotLauched().then(function (isSuccess) {
-                if (!isSuccess)
+            this.tabsSynchronizationService.isLeaderCheck().then(function (isLeader) {
+                if (!isLeader)
                     return;
                 var callback$ = rxjs.of(null);
                 var isCodeFlow = _this.flowHelper.isCurrentFlowCodeFlow();
                 if (isCodeFlow) {
-                    var urlParts = e.detail.toString().split('?');
                     callback$ = _this.codeFlowCallbackSilentRenewIframe(urlParts);
                 }
                 else {
@@ -3078,6 +3073,7 @@
                 callback$.subscribe(function (callbackContext) {
                     _this.refreshSessionWithIFrameCompletedInternal$.next(callbackContext);
                     _this.flowsDataService.resetSilentRenewRunning();
+                    _this.tabsSynchronizationService.sendSilentRenewFinishedNotification();
                 }, function (err) {
                     _this.loggerService.logError('Error: ' + err);
                     _this.refreshSessionWithIFrameCompletedInternal$.next(null);
@@ -3090,12 +3086,12 @@
         };
         return SilentRenewService;
     }());
-    SilentRenewService.ɵfac = function SilentRenewService_Factory(t) { return new (t || SilentRenewService)(i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(IFrameService), i0.ɵɵinject(FlowsService), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ImplicitFlowCallbackService), i0.ɵɵinject(IntervallService)); };
+    SilentRenewService.ɵfac = function SilentRenewService_Factory(t) { return new (t || SilentRenewService)(i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(IFrameService), i0.ɵɵinject(FlowsService), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ImplicitFlowCallbackService), i0.ɵɵinject(IntervallService), i0.ɵɵinject(TabsSynchronizationService)); };
     SilentRenewService.ɵprov = i0.ɵɵdefineInjectable({ token: SilentRenewService, factory: SilentRenewService.ɵfac });
     /*@__PURE__*/ (function () {
         i0.ɵsetClassMetadata(SilentRenewService, [{
                 type: i0.Injectable
-            }], function () { return [{ type: ConfigurationProvider }, { type: IFrameService }, { type: FlowsService }, { type: FlowsDataService }, { type: AuthStateService }, { type: LoggerService }, { type: FlowHelper }, { type: ImplicitFlowCallbackService }, { type: IntervallService }]; }, null);
+            }], function () { return [{ type: ConfigurationProvider }, { type: IFrameService }, { type: FlowsService }, { type: FlowsDataService }, { type: AuthStateService }, { type: LoggerService }, { type: FlowHelper }, { type: ImplicitFlowCallbackService }, { type: IntervallService }, { type: TabsSynchronizationService }]; }, null);
     })();
 
     var CodeFlowCallbackService = /** @class */ (function () {
@@ -3328,7 +3324,7 @@
 
     var MAX_RETRY_ATTEMPTS = 3;
     var RefreshSessionService = /** @class */ (function () {
-        function RefreshSessionService(flowHelper, configurationProvider, flowsDataService, loggerService, silentRenewService, authStateService, authWellKnownService, refreshSessionIframeService, refreshSessionRefreshTokenService) {
+        function RefreshSessionService(flowHelper, configurationProvider, flowsDataService, loggerService, silentRenewService, authStateService, authWellKnownService, refreshSessionIframeService, refreshSessionRefreshTokenService, tabsSynchronizationService) {
             this.flowHelper = flowHelper;
             this.configurationProvider = configurationProvider;
             this.flowsDataService = flowsDataService;
@@ -3338,6 +3334,7 @@
             this.authWellKnownService = authWellKnownService;
             this.refreshSessionIframeService = refreshSessionIframeService;
             this.refreshSessionRefreshTokenService = refreshSessionRefreshTokenService;
+            this.tabsSynchronizationService = tabsSynchronizationService;
         }
         RefreshSessionService.prototype.forceRefreshSession = function (customParams) {
             var _this = this;
@@ -3353,20 +3350,56 @@
                     return null;
                 }));
             }
-            return rxjs.forkJoin([
-                this.startRefreshSession(customParams),
-                this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(operators.take(1)),
-            ]).pipe(operators.timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.retryWhen(this.timeoutRetryStrategy.bind(this)), operators.map(function (_c) {
-                var _d = __read(_c, 2), _ = _d[0], callbackContext = _d[1];
-                var _a, _b;
-                var isAuthenticated = _this.authStateService.areAuthStorageTokensValid();
-                if (isAuthenticated) {
-                    return {
-                        idToken: (_a = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _a === void 0 ? void 0 : _a.id_token,
-                        accessToken: (_b = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _b === void 0 ? void 0 : _b.access_token,
-                    };
+            return this.silentRenewCase();
+        };
+        RefreshSessionService.prototype.silentRenewCase = function (customParams) {
+            var _this = this;
+            return rxjs.from(this.tabsSynchronizationService.isLeaderCheck()).pipe(operators.take(1), operators.switchMap(function (isLeader) {
+                if (isLeader) {
+                    _this.loggerService.logDebug("forceRefreshSession WE ARE LEADER");
+                    return rxjs.forkJoin([
+                        _this.startRefreshSession(customParams),
+                        _this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(operators.take(1)),
+                    ]).pipe(operators.timeout(_this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.map(function (_c) {
+                        var _d = __read(_c, 2), _ = _d[0], callbackContext = _d[1];
+                        var _a, _b;
+                        var isAuthenticated = _this.authStateService.areAuthStorageTokensValid();
+                        if (isAuthenticated) {
+                            return {
+                                idToken: (_a = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _a === void 0 ? void 0 : _a.id_token,
+                                accessToken: (_b = callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult) === null || _b === void 0 ? void 0 : _b.access_token,
+                            };
+                        }
+                        return null;
+                    }), operators.catchError(function (error) {
+                        if (error instanceof rxjs.TimeoutError) {
+                            _this.loggerService.logWarning("forceRefreshSession WE ARE LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
+                            return _this.silentRenewCase(customParams);
+                        }
+                        throw error;
+                    }));
                 }
-                return null;
+                else {
+                    _this.loggerService.logDebug("forceRefreshSession WE ARE NOT NOT NOT LEADER");
+                    return _this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(operators.take(1), operators.timeout(_this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.catchError(function (error) {
+                        if (error instanceof rxjs.TimeoutError) {
+                            _this.loggerService.logWarning("forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
+                            return _this.silentRenewCase(customParams);
+                        }
+                        throw error;
+                    }), operators.map(function () {
+                        var isAuthenticated = _this.authStateService.areAuthStorageTokensValid();
+                        _this.loggerService.logDebug("forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated = " + isAuthenticated);
+                        if (isAuthenticated) {
+                            return {
+                                idToken: _this.authStateService.getIdToken(),
+                                accessToken: _this.authStateService.getAccessToken(),
+                            };
+                        }
+                        _this.loggerService.logError("forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated FALSE WE DONT KNOW WAHT TO DO WITH THIS");
+                        return null;
+                    }));
+                }
             }));
         };
         RefreshSessionService.prototype.startRefreshSession = function (customParams) {
@@ -3392,32 +3425,19 @@
                 return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
             }));
         };
-        RefreshSessionService.prototype.timeoutRetryStrategy = function (errorAttempts) {
-            var _this = this;
-            return errorAttempts.pipe(operators.mergeMap(function (error, index) {
-                var scalingDuration = 1000;
-                var currentAttempt = index + 1;
-                if (!(error instanceof rxjs.TimeoutError) || currentAttempt > MAX_RETRY_ATTEMPTS) {
-                    return rxjs.throwError(error);
-                }
-                _this.loggerService.logDebug("forceRefreshSession timeout. Attempt #" + currentAttempt);
-                _this.flowsDataService.resetSilentRenewRunning();
-                return rxjs.timer(currentAttempt * scalingDuration);
-            }));
-        };
         return RefreshSessionService;
     }());
-    RefreshSessionService.ɵfac = function RefreshSessionService_Factory(t) { return new (t || RefreshSessionService)(i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(SilentRenewService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(AuthWellKnownService), i0.ɵɵinject(RefreshSessionIframeService), i0.ɵɵinject(RefreshSessionRefreshTokenService)); };
+    RefreshSessionService.ɵfac = function RefreshSessionService_Factory(t) { return new (t || RefreshSessionService)(i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(SilentRenewService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(AuthWellKnownService), i0.ɵɵinject(RefreshSessionIframeService), i0.ɵɵinject(RefreshSessionRefreshTokenService), i0.ɵɵinject(TabsSynchronizationService)); };
     RefreshSessionService.ɵprov = i0.ɵɵdefineInjectable({ token: RefreshSessionService, factory: RefreshSessionService.ɵfac, providedIn: 'root' });
     /*@__PURE__*/ (function () {
         i0.ɵsetClassMetadata(RefreshSessionService, [{
                 type: i0.Injectable,
                 args: [{ providedIn: 'root' }]
-            }], function () { return [{ type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: SilentRenewService }, { type: AuthStateService }, { type: AuthWellKnownService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }]; }, null);
+            }], function () { return [{ type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: SilentRenewService }, { type: AuthStateService }, { type: AuthWellKnownService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: TabsSynchronizationService }]; }, null);
     })();
 
     var PeriodicallyTokenCheckService = /** @class */ (function () {
-        function PeriodicallyTokenCheckService(flowsService, flowHelper, configurationProvider, flowsDataService, loggerService, userService, authStateService, refreshSessionIframeService, refreshSessionRefreshTokenService, intervalService, storagePersistanceService) {
+        function PeriodicallyTokenCheckService(flowsService, flowHelper, configurationProvider, flowsDataService, loggerService, userService, authStateService, refreshSessionIframeService, refreshSessionRefreshTokenService, intervalService, storagePersistanceService, tabsSynchronizationService) {
             this.flowsService = flowsService;
             this.flowHelper = flowHelper;
             this.configurationProvider = configurationProvider;
@@ -3429,6 +3449,7 @@
             this.refreshSessionRefreshTokenService = refreshSessionRefreshTokenService;
             this.intervalService = intervalService;
             this.storagePersistanceService = storagePersistanceService;
+            this.tabsSynchronizationService = tabsSynchronizationService;
         }
         PeriodicallyTokenCheckService.prototype.startTokenValidationPeriodically = function (repeatAfterSeconds) {
             var _this = this;
@@ -3455,9 +3476,9 @@
                     return rxjs.of(null);
                 }
                 _this.loggerService.logDebug('starting silent renew...');
-                return rxjs.from(_this.flowsDataService.setSilentRenewRunningWhenIsNotLauched()).pipe(operators.switchMap(function (isSuccessSet) {
-                    if (isSuccessSet) {
-                        _this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS TRUE', (new Date()).getTime().toString());
+                return rxjs.from(_this.tabsSynchronizationService.isLeaderCheck()).pipe(operators.take(1), operators.switchMap(function (isLeader) {
+                    if (isLeader && !_this.flowsDataService.isSilentRenewRunning()) {
+                        _this.flowsDataService.setSilentRenewRunning();
                         // Retrieve Dynamically Set Custom Params
                         var customParams = _this.storagePersistanceService.read('storageCustomRequestParams');
                         if (_this.flowHelper.isCurrentFlowCodeFlowWithRefreshTokens()) {
@@ -3466,7 +3487,6 @@
                         }
                         return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
                     }
-                    _this.loggerService.logDebug('&&&&&&&&&&&&& periodicallyCheck$ > SET LOCK WAS FALSE', (new Date()).getTime().toString());
                     return rxjs.of(null);
                 }));
             }));
@@ -3486,13 +3506,13 @@
         };
         return PeriodicallyTokenCheckService;
     }());
-    PeriodicallyTokenCheckService.ɵfac = function PeriodicallyTokenCheckService_Factory(t) { return new (t || PeriodicallyTokenCheckService)(i0.ɵɵinject(FlowsService), i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(UserService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(RefreshSessionIframeService), i0.ɵɵinject(RefreshSessionRefreshTokenService), i0.ɵɵinject(IntervallService), i0.ɵɵinject(StoragePersistanceService)); };
+    PeriodicallyTokenCheckService.ɵfac = function PeriodicallyTokenCheckService_Factory(t) { return new (t || PeriodicallyTokenCheckService)(i0.ɵɵinject(FlowsService), i0.ɵɵinject(FlowHelper), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(FlowsDataService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(UserService), i0.ɵɵinject(AuthStateService), i0.ɵɵinject(RefreshSessionIframeService), i0.ɵɵinject(RefreshSessionRefreshTokenService), i0.ɵɵinject(IntervallService), i0.ɵɵinject(StoragePersistanceService), i0.ɵɵinject(TabsSynchronizationService)); };
     PeriodicallyTokenCheckService.ɵprov = i0.ɵɵdefineInjectable({ token: PeriodicallyTokenCheckService, factory: PeriodicallyTokenCheckService.ɵfac, providedIn: 'root' });
     /*@__PURE__*/ (function () {
         i0.ɵsetClassMetadata(PeriodicallyTokenCheckService, [{
                 type: i0.Injectable,
                 args: [{ providedIn: 'root' }]
-            }], function () { return [{ type: FlowsService }, { type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: UserService }, { type: AuthStateService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: IntervallService }, { type: StoragePersistanceService }]; }, null);
+            }], function () { return [{ type: FlowsService }, { type: FlowHelper }, { type: ConfigurationProvider }, { type: FlowsDataService }, { type: LoggerService }, { type: UserService }, { type: AuthStateService }, { type: RefreshSessionIframeService }, { type: RefreshSessionRefreshTokenService }, { type: IntervallService }, { type: StoragePersistanceService }, { type: TabsSynchronizationService }]; }, null);
     })();
 
     var PopUpService = /** @class */ (function () {
@@ -4258,6 +4278,7 @@
                         provide: AbstractSecurityStorage,
                         useClass: token.storage || BrowserStorageService,
                     },
+                    TabsSynchronizationService,
                 ],
             };
         };

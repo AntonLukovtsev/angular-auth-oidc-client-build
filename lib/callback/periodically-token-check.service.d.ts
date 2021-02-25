@@ -7,6 +7,7 @@ import { LoggerService } from '../logging/logger.service';
 import { StoragePersistanceService } from '../storage/storage-persistance.service';
 import { UserService } from '../userData/user-service';
 import { FlowHelper } from '../utils/flowHelper/flow-helper.service';
+import { TabsSynchronizationService } from './../iframe/tabs-synchronization.service';
 import { IntervallService } from './intervall.service';
 import { RefreshSessionRefreshTokenService } from './refresh-session-refresh-token.service';
 import * as i0 from "@angular/core";
@@ -22,7 +23,8 @@ export declare class PeriodicallyTokenCheckService {
     private refreshSessionRefreshTokenService;
     private intervalService;
     private storagePersistanceService;
-    constructor(flowsService: FlowsService, flowHelper: FlowHelper, configurationProvider: ConfigurationProvider, flowsDataService: FlowsDataService, loggerService: LoggerService, userService: UserService, authStateService: AuthStateService, refreshSessionIframeService: RefreshSessionIframeService, refreshSessionRefreshTokenService: RefreshSessionRefreshTokenService, intervalService: IntervallService, storagePersistanceService: StoragePersistanceService);
+    private tabsSynchronizationService;
+    constructor(flowsService: FlowsService, flowHelper: FlowHelper, configurationProvider: ConfigurationProvider, flowsDataService: FlowsDataService, loggerService: LoggerService, userService: UserService, authStateService: AuthStateService, refreshSessionIframeService: RefreshSessionIframeService, refreshSessionRefreshTokenService: RefreshSessionRefreshTokenService, intervalService: IntervallService, storagePersistanceService: StoragePersistanceService, tabsSynchronizationService: TabsSynchronizationService);
     startTokenValidationPeriodically(repeatAfterSeconds: number): void;
     static ɵfac: i0.ɵɵFactoryDef<PeriodicallyTokenCheckService, never>;
     static ɵprov: i0.ɵɵInjectableDef<PeriodicallyTokenCheckService>;

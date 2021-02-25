@@ -8,6 +8,7 @@ import { FlowsService } from '../flows/flows.service';
 import { LoggerService } from '../logging/logger.service';
 import { FlowHelper } from '../utils/flowHelper/flow-helper.service';
 import { IFrameService } from './existing-iframe.service';
+import { TabsSynchronizationService } from './tabs-synchronization.service';
 import * as i0 from "@angular/core";
 export declare class SilentRenewService {
     private configurationProvider;
@@ -19,9 +20,10 @@ export declare class SilentRenewService {
     private flowHelper;
     private implicitFlowCallbackService;
     private intervallService;
+    private tabsSynchronizationService;
     private refreshSessionWithIFrameCompletedInternal$;
     get refreshSessionWithIFrameCompleted$(): import("rxjs").Observable<CallbackContext>;
-    constructor(configurationProvider: ConfigurationProvider, iFrameService: IFrameService, flowsService: FlowsService, flowsDataService: FlowsDataService, authStateService: AuthStateService, loggerService: LoggerService, flowHelper: FlowHelper, implicitFlowCallbackService: ImplicitFlowCallbackService, intervallService: IntervallService);
+    constructor(configurationProvider: ConfigurationProvider, iFrameService: IFrameService, flowsService: FlowsService, flowsDataService: FlowsDataService, authStateService: AuthStateService, loggerService: LoggerService, flowHelper: FlowHelper, implicitFlowCallbackService: ImplicitFlowCallbackService, intervallService: IntervallService, tabsSynchronizationService: TabsSynchronizationService);
     getOrCreateIframe(): HTMLIFrameElement;
     isSilentRenewConfigured(): boolean;
     codeFlowCallbackSilentRenewIframe(urlParts: any): import("rxjs").Observable<CallbackContext>;

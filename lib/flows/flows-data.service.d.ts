@@ -19,16 +19,14 @@ export declare class FlowsDataService {
     getAuthStateControl(): any;
     setAuthStateControl(authStateControl: string): void;
     getExistingOrCreateAuthStateControl(): any;
+    createAuthStateControl(): any;
     setSessionState(sessionState: any): void;
     resetStorageFlowData(): void;
     getCodeVerifier(): any;
     createCodeVerifier(): string;
     setSilentRenewRunning(): void;
     resetSilentRenewRunning(): void;
-    isSilentRenewRunning(state?: string): boolean;
-    setSilentRenewRunningOnHandlerWhenIsNotLauched(): Promise<boolean>;
-    setSilentRenewRunningWhenIsNotLauched(): Promise<boolean>;
-    private runMutualExclusionLockingAlgorithm;
+    isSilentRenewRunning(): boolean;
     static ɵfac: i0.ɵɵFactoryDef<FlowsDataService, never>;
     static ɵprov: i0.ɵɵInjectableDef<FlowsDataService>;
 }

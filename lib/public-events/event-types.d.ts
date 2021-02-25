@@ -8,6 +8,7 @@ export declare enum EventTypes {
     UserDataChanged = 3,
     NewAuthorizationResult = 4,
     TokenExpired = 5,
-    IdTokenExpired = 6
+    IdTokenExpired = 6,
+    SilentRenewFinished = 7
 }
 //# sourceMappingURL=event-types.d.ts.map
