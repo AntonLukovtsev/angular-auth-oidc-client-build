@@ -1232,22 +1232,42 @@ class FlowsDataService {
         this.storagePersistanceService.write('authNonce', nonce);
     }
     getAuthStateControl() {
-        return this.storagePersistanceService.read('authStateControl');
+        const json = this.storagePersistanceService.read('authStateControl');
+        const storageObject = !!json ? JSON.parse(json) : null;
+        this.loggerService.logDebug(`getAuthStateControl > currentTime: ${new Date().toTimeString()}`);
+        if (storageObject) {
+            const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+            const currentDateUtc = Date.parse(new Date().toISOString());
+            const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+            const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+            if (isProbablyStuck) {
+                this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
+                this.storagePersistanceService.write('authStateControl', '');
+                return false;
+            }
+            this.loggerService.logDebug(`getAuthStateControl > STATE SUCCESSFULLY RETURNED ${storageObject.state} > currentTime: ${new Date().toTimeString()}`);
+            return storageObject.state;
+        }
+        this.loggerService.logWarning(`getAuthStateControl > storageObject IS NULL RETURN FALSE > currentTime: ${new Date().toTimeString()}`);
+        return false;
     }
     setAuthStateControl(authStateControl) {
         this.storagePersistanceService.write('authStateControl', authStateControl);
     }
     getExistingOrCreateAuthStateControl() {
-        let state = this.storagePersistanceService.read('authStateControl');
+        let state = this.getAuthStateControl();
         if (!state) {
-            state = this.randomService.createRandom(40);
-            this.storagePersistanceService.write('authStateControl', state);
+            state = this.createAuthStateControl();
         }
         return state;
     }
     createAuthStateControl() {
         const state = this.randomService.createRandom(40);
-        this.storagePersistanceService.write('authStateControl', state);
+        const storageObject = {
+            state: state,
+            dateOfLaunchedProcessUtc: new Date().toISOString(),
+        };
+        this.storagePersistanceService.write('authStateControl', JSON.stringify(storageObject));
         return state;
     }
     setSessionState(sessionState) {
@@ -1862,7 +1882,7 @@ EqualityService.ɵprov = ɵɵdefineInjectable({ token: EqualityService, factory:
     }], null, null); })();
 
 class StateValidationService {
-    constructor(storagePersistanceService, tokenValidationService, tokenHelperService, loggerService, configurationProvider, equalityService, flowHelper) {
+    constructor(storagePersistanceService, tokenValidationService, tokenHelperService, loggerService, configurationProvider, equalityService, flowHelper, flowsDataService) {
         this.storagePersistanceService = storagePersistanceService;
         this.tokenValidationService = tokenValidationService;
         this.tokenHelperService = tokenHelperService;
@@ -1870,6 +1890,7 @@ class StateValidationService {
         this.configurationProvider = configurationProvider;
         this.equalityService = equalityService;
         this.flowHelper = flowHelper;
+        this.flowsDataService = flowsDataService;
     }
     getValidatedStateResult(callbackContext) {
         if (callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult.error) {
@@ -1879,7 +1900,7 @@ class StateValidationService {
     }
     validateState(callbackContext) {
         const toReturn = new StateValidationResult();
-        const authStateControl = this.storagePersistanceService.read('authStateControl');
+        const authStateControl = this.flowsDataService.getAuthStateControl();
         if (!this.tokenValidationService.validateStateFromHashCallback(callbackContext.authResult.state, authStateControl)) {
             this.loggerService.logWarning('authorizedCallback incorrect state');
             toReturn.state = ValidationResult.StatesDoNotMatch;
@@ -2058,11 +2079,11 @@ class StateValidationService {
         this.loggerService.logDebug('AuthorizedCallback token(s) invalid');
     }
 }
-StateValidationService.ɵfac = function StateValidationService_Factory(t) { return new (t || StateValidationService)(ɵɵinject(StoragePersistanceService), ɵɵinject(TokenValidationService), ɵɵinject(TokenHelperService), ɵɵinject(LoggerService), ɵɵinject(ConfigurationProvider), ɵɵinject(EqualityService), ɵɵinject(FlowHelper)); };
+StateValidationService.ɵfac = function StateValidationService_Factory(t) { return new (t || StateValidationService)(ɵɵinject(StoragePersistanceService), ɵɵinject(TokenValidationService), ɵɵinject(TokenHelperService), ɵɵinject(LoggerService), ɵɵinject(ConfigurationProvider), ɵɵinject(EqualityService), ɵɵinject(FlowHelper), ɵɵinject(FlowsDataService)); };
 StateValidationService.ɵprov = ɵɵdefineInjectable({ token: StateValidationService, factory: StateValidationService.ɵfac });
 /*@__PURE__*/ (function () { ɵsetClassMetadata(StateValidationService, [{
         type: Injectable
-    }], function () { return [{ type: StoragePersistanceService }, { type: TokenValidationService }, { type: TokenHelperService }, { type: LoggerService }, { type: ConfigurationProvider }, { type: EqualityService }, { type: FlowHelper }]; }, null); })();
+    }], function () { return [{ type: StoragePersistanceService }, { type: TokenValidationService }, { type: TokenHelperService }, { type: LoggerService }, { type: ConfigurationProvider }, { type: EqualityService }, { type: FlowHelper }, { type: FlowsDataService }]; }, null); })();
 
 class FlowsService {
     constructor(urlService, loggerService, tokenValidationService, configurationProvider, authStateService, flowsDataService, signinKeyDataService, dataService, userService, stateValidationService, storagePersistanceService) {

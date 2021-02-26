@@ -1644,22 +1644,42 @@
             this.storagePersistanceService.write('authNonce', nonce);
         };
         FlowsDataService.prototype.getAuthStateControl = function () {
-            return this.storagePersistanceService.read('authStateControl');
+            var json = this.storagePersistanceService.read('authStateControl');
+            var storageObject = !!json ? JSON.parse(json) : null;
+            this.loggerService.logDebug("getAuthStateControl > currentTime: " + new Date().toTimeString());
+            if (storageObject) {
+                var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+                var currentDateUtc = Date.parse(new Date().toISOString());
+                var elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+                var isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+                if (isProbablyStuck) {
+                    this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
+                    this.storagePersistanceService.write('authStateControl', '');
+                    return false;
+                }
+                this.loggerService.logDebug("getAuthStateControl > STATE SUCCESSFULLY RETURNED " + storageObject.state + " > currentTime: " + new Date().toTimeString());
+                return storageObject.state;
+            }
+            this.loggerService.logWarning("getAuthStateControl > storageObject IS NULL RETURN FALSE > currentTime: " + new Date().toTimeString());
+            return false;
         };
         FlowsDataService.prototype.setAuthStateControl = function (authStateControl) {
             this.storagePersistanceService.write('authStateControl', authStateControl);
         };
         FlowsDataService.prototype.getExistingOrCreateAuthStateControl = function () {
-            var state = this.storagePersistanceService.read('authStateControl');
+            var state = this.getAuthStateControl();
             if (!state) {
-                state = this.randomService.createRandom(40);
-                this.storagePersistanceService.write('authStateControl', state);
+                state = this.createAuthStateControl();
             }
             return state;
         };
         FlowsDataService.prototype.createAuthStateControl = function () {
             var state = this.randomService.createRandom(40);
-            this.storagePersistanceService.write('authStateControl', state);
+            var storageObject = {
+                state: state,
+                dateOfLaunchedProcessUtc: new Date().toISOString(),
+            };
+            this.storagePersistanceService.write('authStateControl', JSON.stringify(storageObject));
             return state;
         };
         FlowsDataService.prototype.setSessionState = function (sessionState) {
@@ -2323,7 +2343,7 @@
     })();
 
     var StateValidationService = /** @class */ (function () {
-        function StateValidationService(storagePersistanceService, tokenValidationService, tokenHelperService, loggerService, configurationProvider, equalityService, flowHelper) {
+        function StateValidationService(storagePersistanceService, tokenValidationService, tokenHelperService, loggerService, configurationProvider, equalityService, flowHelper, flowsDataService) {
             this.storagePersistanceService = storagePersistanceService;
             this.tokenValidationService = tokenValidationService;
             this.tokenHelperService = tokenHelperService;
@@ -2331,6 +2351,7 @@
             this.configurationProvider = configurationProvider;
             this.equalityService = equalityService;
             this.flowHelper = flowHelper;
+            this.flowsDataService = flowsDataService;
         }
         StateValidationService.prototype.getValidatedStateResult = function (callbackContext) {
             if (callbackContext === null || callbackContext === void 0 ? void 0 : callbackContext.authResult.error) {
@@ -2340,7 +2361,7 @@
         };
         StateValidationService.prototype.validateState = function (callbackContext) {
             var toReturn = new StateValidationResult();
-            var authStateControl = this.storagePersistanceService.read('authStateControl');
+            var authStateControl = this.flowsDataService.getAuthStateControl();
             if (!this.tokenValidationService.validateStateFromHashCallback(callbackContext.authResult.state, authStateControl)) {
                 this.loggerService.logWarning('authorizedCallback incorrect state');
                 toReturn.state = exports.ValidationResult.StatesDoNotMatch;
@@ -2520,12 +2541,12 @@
         };
         return StateValidationService;
     }());
-    StateValidationService.ɵfac = function StateValidationService_Factory(t) { return new (t || StateValidationService)(i0.ɵɵinject(StoragePersistanceService), i0.ɵɵinject(TokenValidationService), i0.ɵɵinject(TokenHelperService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(EqualityService), i0.ɵɵinject(FlowHelper)); };
+    StateValidationService.ɵfac = function StateValidationService_Factory(t) { return new (t || StateValidationService)(i0.ɵɵinject(StoragePersistanceService), i0.ɵɵinject(TokenValidationService), i0.ɵɵinject(TokenHelperService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(ConfigurationProvider), i0.ɵɵinject(EqualityService), i0.ɵɵinject(FlowHelper), i0.ɵɵinject(FlowsDataService)); };
     StateValidationService.ɵprov = i0.ɵɵdefineInjectable({ token: StateValidationService, factory: StateValidationService.ɵfac });
     /*@__PURE__*/ (function () {
         i0.ɵsetClassMetadata(StateValidationService, [{
                 type: i0.Injectable
-            }], function () { return [{ type: StoragePersistanceService }, { type: TokenValidationService }, { type: TokenHelperService }, { type: LoggerService }, { type: ConfigurationProvider }, { type: EqualityService }, { type: FlowHelper }]; }, null);
+            }], function () { return [{ type: StoragePersistanceService }, { type: TokenValidationService }, { type: TokenHelperService }, { type: LoggerService }, { type: ConfigurationProvider }, { type: EqualityService }, { type: FlowHelper }, { type: FlowsDataService }]; }, null);
     })();
 
     var FlowsService = /** @class */ (function () {
