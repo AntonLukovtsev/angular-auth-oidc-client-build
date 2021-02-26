@@ -2902,26 +2902,25 @@
             this.publicEventsService = publicEventsService;
             this.loggerService = loggerService;
             this._isLeaderSubjectInitialized = false;
-            this._silentRenewFinished$ = new rxjs.ReplaySubject();
+            this._silentRenewFinished$ = new rxjs.ReplaySubject(1);
+            this._leaderSubjectInitialized$ = new rxjs.ReplaySubject(1);
             this._currentRandomId = Math.random().toString(36).substr(2, 9) + "_" + new Date().getUTCMilliseconds();
             this.Initialization();
         }
         TabsSynchronizationService.prototype.isLeaderCheck = function () {
             var _this = this;
+            this.loggerService.logDebug("isLeaderCheck > prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
+            if (!this._isLeaderSubjectInitialized) {
+                this.loggerService.logDebug("isLeaderCheck > IS LEADER IS NOT INITIALIZED > prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
+                return this._leaderSubjectInitialized$
+                    .asObservable()
+                    .pipe(operators.take(1), operators.switchMap(function () {
+                    return rxjs.of(_this._elector.isLeader);
+                }))
+                    .toPromise();
+            }
+            this.loggerService.logDebug("isLeaderCheck > IS LEADER IS ALREADY INITIALIZED SUCCESSFULLY> prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
             return new Promise(function (resolve) {
-                _this.loggerService.logDebug("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
-                if (!_this._isLeaderSubjectInitialized) {
-                    setTimeout(function () {
-                        if (!_this._isLeaderSubjectInitialized) {
-                            _this.loggerService.logWarning("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId + " > leader subject doesn't initialized");
-                            resolve(false);
-                        }
-                        else {
-                            resolve(_this._elector.isLeader);
-                        }
-                        return;
-                    }, 1000);
-                }
                 setTimeout(function () {
                     var isLeader = _this._elector.isLeader;
                     _this.loggerService.logWarning("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId + " > inside setTimeout isLeader = " + isLeader);
@@ -2951,6 +2950,7 @@
             this._elector.awaitLeadership().then(function () {
                 if (!_this._isLeaderSubjectInitialized) {
                     _this._isLeaderSubjectInitialized = true;
+                    _this._leaderSubjectInitialized$.next(true);
                 }
                 _this.loggerService.logDebug("this tab is now leader > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
             });
@@ -3352,8 +3352,12 @@
             }
             return this.silentRenewCase();
         };
-        RefreshSessionService.prototype.silentRenewCase = function (customParams) {
+        RefreshSessionService.prototype.silentRenewCase = function (customParams, currentRetry) {
             var _this = this;
+            this.loggerService.logDebug("silentRenewCase CURRENT RETRY ATTEMPT #" + currentRetry);
+            if (currentRetry && currentRetry > MAX_RETRY_ATTEMPTS) {
+                return rxjs.throwError(new Error('Initializatin has been failed. Exceeded max retry attepmts.'));
+            }
             return rxjs.from(this.tabsSynchronizationService.isLeaderCheck()).pipe(operators.take(1), operators.switchMap(function (isLeader) {
                 if (isLeader) {
                     _this.loggerService.logDebug("forceRefreshSession WE ARE LEADER");
@@ -3374,7 +3378,13 @@
                     }), operators.catchError(function (error) {
                         if (error instanceof rxjs.TimeoutError) {
                             _this.loggerService.logWarning("forceRefreshSession WE ARE LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
-                            return _this.silentRenewCase(customParams);
+                            if (currentRetry) {
+                                currentRetry++;
+                            }
+                            else {
+                                currentRetry = 1;
+                            }
+                            return _this.silentRenewCase(customParams, currentRetry);
                         }
                         throw error;
                     }));
@@ -3384,7 +3394,13 @@
                     return _this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(operators.take(1), operators.timeout(_this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.catchError(function (error) {
                         if (error instanceof rxjs.TimeoutError) {
                             _this.loggerService.logWarning("forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
-                            return _this.silentRenewCase(customParams);
+                            if (currentRetry) {
+                                currentRetry++;
+                            }
+                            else {
+                                currentRetry = 1;
+                            }
+                            return _this.silentRenewCase(customParams, currentRetry);
                         }
                         throw error;
                     }), operators.map(function () {
