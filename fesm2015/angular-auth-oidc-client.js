@@ -1231,21 +1231,28 @@ class FlowsDataService {
     setNonce(nonce) {
         this.storagePersistanceService.write('authNonce', nonce);
     }
-    getAuthStateControl() {
+    getAuthStateControl(authStateLauchedType = null) {
         const json = this.storagePersistanceService.read('authStateControl');
         const storageObject = !!json ? JSON.parse(json) : null;
-        this.loggerService.logDebug(`getAuthStateControl > currentTime: ${new Date().toTimeString()}`);
+        this.loggerService.logDebug(`getAuthStateControl > currentTime: ${new Date().toTimeString()} > storageObject see inner details:`, storageObject);
         if (storageObject) {
-            const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
-            const currentDateUtc = Date.parse(new Date().toISOString());
-            const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
-            const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
-            if (isProbablyStuck) {
-                this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
-                this.storagePersistanceService.write('authStateControl', '');
+            if (authStateLauchedType === 'login' && storageObject.lauchedFrom !== 'login') {
+                this.loggerService.logWarning(`getAuthStateControl > STATE SHOULD BE RE-INITIALIZED FOR LOGIN FLOW > currentTime: ${new Date().toTimeString()}`);
                 return false;
             }
-            this.loggerService.logDebug(`getAuthStateControl > STATE SUCCESSFULLY RETURNED ${storageObject.state} > currentTime: ${new Date().toTimeString()}`);
+            if (storageObject.lauchedFrom === 'silent-renew-code') {
+                this.loggerService.logDebug(`getAuthStateControl > STATE LAUNCHED FROM SILENT RENEW: ${storageObject.state} > storageObject.lauchedFrom ${storageObject.lauchedFrom} >  currentTime: ${new Date().toTimeString()}`);
+                const dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+                const currentDateUtc = Date.parse(new Date().toISOString());
+                const elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+                const isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+                if (isProbablyStuck) {
+                    this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
+                    this.storagePersistanceService.write('authStateControl', '');
+                    return false;
+                }
+            }
+            this.loggerService.logDebug(`getAuthStateControl > storageObject.lauchedFrom ${storageObject.lauchedFrom} > STATE SUCCESSFULLY RETURNED ${storageObject.state} > currentTime: ${new Date().toTimeString()}`);
             return storageObject.state;
         }
         this.loggerService.logWarning(`getAuthStateControl > storageObject IS NULL RETURN FALSE > currentTime: ${new Date().toTimeString()}`);
@@ -1254,18 +1261,19 @@ class FlowsDataService {
     setAuthStateControl(authStateControl) {
         this.storagePersistanceService.write('authStateControl', authStateControl);
     }
-    getExistingOrCreateAuthStateControl() {
-        let state = this.getAuthStateControl();
+    getExistingOrCreateAuthStateControl(authStateLauchedType) {
+        let state = this.getAuthStateControl(authStateLauchedType);
         if (!state) {
-            state = this.createAuthStateControl();
+            state = this.createAuthStateControl(authStateLauchedType);
         }
         return state;
     }
-    createAuthStateControl() {
+    createAuthStateControl(authStateLauchedType) {
         const state = this.randomService.createRandom(40);
         const storageObject = {
             state: state,
             dateOfLaunchedProcessUtc: new Date().toISOString(),
+            lauchedFrom: authStateLauchedType,
         };
         this.storagePersistanceService.write('authStateControl', JSON.stringify(storageObject));
         return state;
@@ -1379,9 +1387,9 @@ class UrlService {
         const anyParameterIsGiven = CALLBACK_PARAMS_TO_CHECK.some((x) => !!this.getUrlParameter(currentUrl, x));
         return anyParameterIsGiven;
     }
-    getRefreshSessionSilentRenewUrl(customParams) {
+    getRefreshSessionSilentRenewUrl(customParams, authStateLauchedType) {
         if (this.flowHelper.isCurrentFlowCodeFlow()) {
-            return this.createUrlCodeFlowWithSilentRenew(customParams);
+            return this.createUrlCodeFlowWithSilentRenew(customParams, authStateLauchedType);
         }
         return this.createUrlImplicitFlowWithSilentRenew(customParams) || '';
     }
@@ -1525,7 +1533,7 @@ class UrlService {
         return `${authorizationUrl}?${params}`;
     }
     createUrlImplicitFlowWithSilentRenew(customParams) {
-        const state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+        const state = this.flowsDataService.getExistingOrCreateAuthStateControl('silent-renew-code');
         const nonce = this.flowsDataService.createNonce();
         const silentRenewUrl = this.getSilentRenewUrl();
         if (!silentRenewUrl) {
@@ -1539,8 +1547,10 @@ class UrlService {
         this.loggerService.logError('authWellKnownEndpoints is undefined');
         return null;
     }
-    createUrlCodeFlowWithSilentRenew(customParams) {
-        const state = this.flowsDataService.createAuthStateControl();
+    createUrlCodeFlowWithSilentRenew(customParams, authStateLauchedType) {
+        const state = authStateLauchedType === 'login'
+            ? this.flowsDataService.getExistingOrCreateAuthStateControl(authStateLauchedType)
+            : this.flowsDataService.createAuthStateControl(authStateLauchedType);
         const nonce = this.flowsDataService.createNonce();
         this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + state);
         // code_challenge with "S256"
@@ -1558,7 +1568,7 @@ class UrlService {
         return null;
     }
     createUrlImplicitFlowAuthorize(customParams) {
-        const state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+        const state = this.flowsDataService.getExistingOrCreateAuthStateControl('login');
         const nonce = this.flowsDataService.createNonce();
         this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
         const redirectUrl = this.getRedirectUrl();
@@ -1573,7 +1583,7 @@ class UrlService {
         return null;
     }
     createUrlCodeFlowAuthorize(customParams) {
-        const state = this.flowsDataService.createAuthStateControl();
+        const state = this.flowsDataService.getExistingOrCreateAuthStateControl('login');
         const nonce = this.flowsDataService.createNonce();
         this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
         const redirectUrl = this.getRedirectUrl();
@@ -2174,7 +2184,7 @@ class FlowsService {
     }
     // STEP 1 Refresh session
     refreshSessionWithRefreshTokens() {
-        const stateData = this.flowsDataService.getExistingOrCreateAuthStateControl();
+        const stateData = this.flowsDataService.getExistingOrCreateAuthStateControl('refresh-token');
         this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + stateData);
         const refreshToken = this.authStateService.getRefreshToken();
         const idToken = this.authStateService.getIdToken();
@@ -2440,10 +2450,14 @@ class TabsSynchronizationService {
         this.publicEventsService = publicEventsService;
         this.loggerService = loggerService;
         this._isLeaderSubjectInitialized = false;
+        this._isClosed = false;
         this._silentRenewFinished$ = new ReplaySubject(1);
         this._leaderSubjectInitialized$ = new ReplaySubject(1);
         this._currentRandomId = `${Math.random().toString(36).substr(2, 9)}_${new Date().getUTCMilliseconds()}`;
         this.Initialization();
+    }
+    get isClosed() {
+        return this._isClosed;
     }
     isLeaderCheck() {
         this.loggerService.logDebug(`isLeaderCheck > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
@@ -2456,13 +2470,11 @@ class TabsSynchronizationService {
             }))
                 .toPromise();
         }
-        this.loggerService.logDebug(`isLeaderCheck > IS LEADER IS ALREADY INITIALIZED SUCCESSFULLY> prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+        this.loggerService.logDebug(`isLeaderCheck > IS LEADER IS ALREADY INITIALIZED > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
         return new Promise((resolve) => {
-            setTimeout(() => {
-                const isLeader = this._elector.isLeader;
-                this.loggerService.logWarning(`isLeaderCheck > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId} > inside setTimeout isLeader = ${isLeader}`);
-                resolve(isLeader);
-            }, 1000);
+            const isLeaderResult = this._elector.isLeader;
+            this.loggerService.logDebug(`isLeaderCheck > isLeader result = ${isLeaderResult} > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+            resolve(isLeaderResult);
         });
     }
     getSilentRenewFinishedObservable() {
@@ -2474,12 +2486,30 @@ class TabsSynchronizationService {
         }
         this._silentRenewFinishedChannel.postMessage(`Silent renew finished by _currentRandomId ${this._currentRandomId}`);
     }
+    closeTabSynchronization() {
+        this.loggerService.logWarning(`Tab synchronization has been closed > prefix: ${this._prefix} > currentRandomId: ${this._currentRandomId}`);
+        this._elector.die();
+        this._silentRenewFinishedChannel.close();
+        this._leaderChannel.close();
+        this._isLeaderSubjectInitialized = false;
+        this._isClosed = true;
+    }
+    reInitialize() {
+        this.loggerService.logDebug('TabsSynchronizationService re-initialization process started...');
+        if (!this._isClosed) {
+            throw Error('TabsSynchronizationService cannot be re-initialized when it is not closed.');
+        }
+        this._silentRenewFinished$ = new ReplaySubject(1);
+        this._leaderSubjectInitialized$ = new ReplaySubject(1);
+        this.Initialization();
+        this._isClosed = false;
+    }
     Initialization() {
         var _a;
         this.loggerService.logDebug('TabsSynchronizationService > Initialization started');
         this._prefix = ((_a = this.configurationProvider.openIDConfiguration) === null || _a === void 0 ? void 0 : _a.clientId) || '';
-        const channel = new BroadcastChannel(`${this._prefix}_leader`);
-        this._elector = createLeaderElection(channel, {
+        this._leaderChannel = new BroadcastChannel(`${this._prefix}_leader`);
+        this._elector = createLeaderElection(this._leaderChannel, {
             fallbackInterval: 2000,
             responseTime: 1000,
         });
@@ -2755,9 +2785,9 @@ class RefreshSessionIframeService {
         this.silentRenewService = silentRenewService;
         this.renderer = rendererFactory.createRenderer(null, null);
     }
-    refreshSessionWithIframe(customParams) {
+    refreshSessionWithIframe(customParams, authStateLauchedType) {
         this.loggerService.logDebug('BEGIN refresh session Authorize Iframe renew');
-        const url = this.urlService.getRefreshSessionSilentRenewUrl(customParams);
+        const url = this.urlService.getRefreshSessionSilentRenewUrl(customParams, authStateLauchedType);
         return this.sendAuthorizeReqestUsingSilentRenew(url);
     }
     sendAuthorizeReqestUsingSilentRenew(url) {
@@ -2855,13 +2885,13 @@ class RefreshSessionService {
         if (currentRetry && currentRetry > MAX_RETRY_ATTEMPTS) {
             return throwError(new Error('Initializatin has been failed. Exceeded max retry attepmts.'));
         }
-        return from(this.tabsSynchronizationService.isLeaderCheck()).pipe(take(1), switchMap((isLeader) => {
+        return from(this.tabsSynchronizationService.isLeaderCheck()).pipe(timeout(2000), take(1), switchMap((isLeader) => {
             if (isLeader) {
                 this.loggerService.logDebug(`forceRefreshSession WE ARE LEADER`);
                 return forkJoin([
                     this.startRefreshSession(customParams),
                     this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(take(1)),
-                ]).pipe(timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), map(([_, callbackContext]) => {
+                ]).pipe(timeout(5000), map(([_, callbackContext]) => {
                     var _a, _b;
                     const isAuthenticated = this.authStateService.areAuthStorageTokensValid();
                     if (isAuthenticated) {
@@ -2880,26 +2910,14 @@ class RefreshSessionService {
                         else {
                             currentRetry = 1;
                         }
-                        return this.silentRenewCase(customParams, currentRetry);
+                        return this.silentRenewCase(customParams, currentRetry).pipe(take(1));
                     }
                     throw error;
                 }));
             }
             else {
                 this.loggerService.logDebug(`forceRefreshSession WE ARE NOT NOT NOT LEADER`);
-                return this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(take(1), timeout(this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), catchError((error) => {
-                    if (error instanceof TimeoutError) {
-                        this.loggerService.logWarning(`forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)`);
-                        if (currentRetry) {
-                            currentRetry++;
-                        }
-                        else {
-                            currentRetry = 1;
-                        }
-                        return this.silentRenewCase(customParams, currentRetry);
-                    }
-                    throw error;
-                }), map(() => {
+                return this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(take(1), timeout(5000), map(() => {
                     const isAuthenticated = this.authStateService.areAuthStorageTokensValid();
                     this.loggerService.logDebug(`forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated = ${isAuthenticated}`);
                     if (isAuthenticated) {
@@ -2910,8 +2928,32 @@ class RefreshSessionService {
                     }
                     this.loggerService.logError(`forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated FALSE WE DONT KNOW WAHT TO DO WITH THIS`);
                     return null;
+                }), catchError((error) => {
+                    if (error instanceof TimeoutError) {
+                        this.loggerService.logWarning(`forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)`);
+                        if (currentRetry) {
+                            currentRetry++;
+                        }
+                        else {
+                            currentRetry = 1;
+                        }
+                        return this.silentRenewCase(customParams, currentRetry).pipe(take(1));
+                    }
+                    throw error;
                 }));
             }
+        }), catchError((error) => {
+            if (error instanceof TimeoutError) {
+                this.loggerService.logWarning(`forceRefreshSession > FROM isLeaderCheck > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)`);
+                if (currentRetry) {
+                    currentRetry++;
+                }
+                else {
+                    currentRetry = 1;
+                }
+                return this.silentRenewCase(customParams, currentRetry);
+            }
+            throw error;
         }));
     }
     startRefreshSession(customParams) {
@@ -2933,7 +2975,7 @@ class RefreshSessionService {
                 // Refresh Session using Refresh tokens
                 return this.refreshSessionRefreshTokenService.refreshSessionWithRefreshTokens(customParams);
             }
-            return this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
+            return this.refreshSessionIframeService.refreshSessionWithIframe(customParams, 'login');
         }));
     }
 }
@@ -2973,6 +3015,10 @@ class PeriodicallyTokenCheckService {
             if (!shouldBeExecuted) {
                 return of(null);
             }
+            if (this.tabsSynchronizationService.isClosed) {
+                this.loggerService.logWarning('startTokenValidationPeriodically > this.tabsSynchronizationService.isClosed = TRUE - so we re-initialize');
+                this.tabsSynchronizationService.reInitialize();
+            }
             const idTokenHasExpired = this.authStateService.hasIdTokenExpired();
             const accessTokenHasExpired = this.authStateService.hasAccessTokenExpiredIfExpiryExists();
             if (!idTokenHasExpired && !accessTokenHasExpired) {
@@ -2992,7 +3038,7 @@ class PeriodicallyTokenCheckService {
                         // Refresh Session using Refresh tokens
                         return this.refreshSessionRefreshTokenService.refreshSessionWithRefreshTokens(customParams);
                     }
-                    return this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
+                    return this.refreshSessionIframeService.refreshSessionWithIframe(customParams, 'silent-renew-code');
                 }
                 return of(null);
             }));
@@ -3394,7 +3440,7 @@ LoginService.ɵprov = ɵɵdefineInjectable({ token: LoginService, factory: Login
     }], function () { return [{ type: LoggerService }, { type: TokenValidationService }, { type: UrlService }, { type: RedirectService }, { type: ConfigurationProvider }, { type: AuthWellKnownService }, { type: PopUpService }, { type: CheckAuthService }, { type: UserService }, { type: AuthStateService }]; }, null); })();
 
 class LogoffRevocationService {
-    constructor(dataService, storagePersistanceService, loggerService, urlService, checkSessionService, flowsService, redirectService) {
+    constructor(dataService, storagePersistanceService, loggerService, urlService, checkSessionService, flowsService, redirectService, tabsSynchronizationService) {
         this.dataService = dataService;
         this.storagePersistanceService = storagePersistanceService;
         this.loggerService = loggerService;
@@ -3402,11 +3448,13 @@ class LogoffRevocationService {
         this.checkSessionService = checkSessionService;
         this.flowsService = flowsService;
         this.redirectService = redirectService;
+        this.tabsSynchronizationService = tabsSynchronizationService;
     }
     // Logs out on the server and the local client.
     // If the server state has changed, checksession, then only a local logout.
     logoff(urlHandler) {
         this.loggerService.logDebug('logoff, remove auth ');
+        this.tabsSynchronizationService.closeTabSynchronization();
         const endSessionUrl = this.getEndSessionUrl();
         this.flowsService.resetAuthorizationData();
         if (!endSessionUrl) {
@@ -3424,6 +3472,7 @@ class LogoffRevocationService {
         }
     }
     logoffLocal() {
+        this.tabsSynchronizationService.closeTabSynchronization();
         this.flowsService.resetAuthorizationData();
     }
     // The refresh token and and the access token are revoked on the server. If the refresh token does not exist
@@ -3492,11 +3541,11 @@ class LogoffRevocationService {
         return this.urlService.createEndSessionUrl(idToken);
     }
 }
-LogoffRevocationService.ɵfac = function LogoffRevocationService_Factory(t) { return new (t || LogoffRevocationService)(ɵɵinject(DataService), ɵɵinject(StoragePersistanceService), ɵɵinject(LoggerService), ɵɵinject(UrlService), ɵɵinject(CheckSessionService), ɵɵinject(FlowsService), ɵɵinject(RedirectService)); };
+LogoffRevocationService.ɵfac = function LogoffRevocationService_Factory(t) { return new (t || LogoffRevocationService)(ɵɵinject(DataService), ɵɵinject(StoragePersistanceService), ɵɵinject(LoggerService), ɵɵinject(UrlService), ɵɵinject(CheckSessionService), ɵɵinject(FlowsService), ɵɵinject(RedirectService), ɵɵinject(TabsSynchronizationService)); };
 LogoffRevocationService.ɵprov = ɵɵdefineInjectable({ token: LogoffRevocationService, factory: LogoffRevocationService.ɵfac });
 /*@__PURE__*/ (function () { ɵsetClassMetadata(LogoffRevocationService, [{
         type: Injectable
-    }], function () { return [{ type: DataService }, { type: StoragePersistanceService }, { type: LoggerService }, { type: UrlService }, { type: CheckSessionService }, { type: FlowsService }, { type: RedirectService }]; }, null); })();
+    }], function () { return [{ type: DataService }, { type: StoragePersistanceService }, { type: LoggerService }, { type: UrlService }, { type: CheckSessionService }, { type: FlowsService }, { type: RedirectService }, { type: TabsSynchronizationService }]; }, null); })();
 
 class OidcSecurityService {
     constructor(checkSessionService, checkAuthService, userService, tokenHelperService, configurationProvider, authStateService, flowsDataService, callbackService, logoffRevocationService, loginService, storagePersistanceService, refreshSessionService) {

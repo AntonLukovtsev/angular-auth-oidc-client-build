@@ -1643,21 +1643,29 @@
         FlowsDataService.prototype.setNonce = function (nonce) {
             this.storagePersistanceService.write('authNonce', nonce);
         };
-        FlowsDataService.prototype.getAuthStateControl = function () {
+        FlowsDataService.prototype.getAuthStateControl = function (authStateLauchedType) {
+            if (authStateLauchedType === void 0) { authStateLauchedType = null; }
             var json = this.storagePersistanceService.read('authStateControl');
             var storageObject = !!json ? JSON.parse(json) : null;
-            this.loggerService.logDebug("getAuthStateControl > currentTime: " + new Date().toTimeString());
+            this.loggerService.logDebug("getAuthStateControl > currentTime: " + new Date().toTimeString() + " > storageObject see inner details:", storageObject);
             if (storageObject) {
-                var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
-                var currentDateUtc = Date.parse(new Date().toISOString());
-                var elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
-                var isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
-                if (isProbablyStuck) {
-                    this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
-                    this.storagePersistanceService.write('authStateControl', '');
+                if (authStateLauchedType === 'login' && storageObject.lauchedFrom !== 'login') {
+                    this.loggerService.logWarning("getAuthStateControl > STATE SHOULD BE RE-INITIALIZED FOR LOGIN FLOW > currentTime: " + new Date().toTimeString());
                     return false;
                 }
-                this.loggerService.logDebug("getAuthStateControl > STATE SUCCESSFULLY RETURNED " + storageObject.state + " > currentTime: " + new Date().toTimeString());
+                if (storageObject.lauchedFrom === 'silent-renew-code') {
+                    this.loggerService.logDebug("getAuthStateControl > STATE LAUNCHED FROM SILENT RENEW: " + storageObject.state + " > storageObject.lauchedFrom " + storageObject.lauchedFrom + " >  currentTime: " + new Date().toTimeString());
+                    var dateOfLaunchedProcessUtc = Date.parse(storageObject.dateOfLaunchedProcessUtc);
+                    var currentDateUtc = Date.parse(new Date().toISOString());
+                    var elapsedTimeInMilliseconds = Math.abs(currentDateUtc - dateOfLaunchedProcessUtc);
+                    var isProbablyStuck = elapsedTimeInMilliseconds > this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000;
+                    if (isProbablyStuck) {
+                        this.loggerService.logWarning('getAuthStateControl -> silent renew process is probably stuck, AuthState will be reset.');
+                        this.storagePersistanceService.write('authStateControl', '');
+                        return false;
+                    }
+                }
+                this.loggerService.logDebug("getAuthStateControl > storageObject.lauchedFrom " + storageObject.lauchedFrom + " > STATE SUCCESSFULLY RETURNED " + storageObject.state + " > currentTime: " + new Date().toTimeString());
                 return storageObject.state;
             }
             this.loggerService.logWarning("getAuthStateControl > storageObject IS NULL RETURN FALSE > currentTime: " + new Date().toTimeString());
@@ -1666,18 +1674,19 @@
         FlowsDataService.prototype.setAuthStateControl = function (authStateControl) {
             this.storagePersistanceService.write('authStateControl', authStateControl);
         };
-        FlowsDataService.prototype.getExistingOrCreateAuthStateControl = function () {
-            var state = this.getAuthStateControl();
+        FlowsDataService.prototype.getExistingOrCreateAuthStateControl = function (authStateLauchedType) {
+            var state = this.getAuthStateControl(authStateLauchedType);
             if (!state) {
-                state = this.createAuthStateControl();
+                state = this.createAuthStateControl(authStateLauchedType);
             }
             return state;
         };
-        FlowsDataService.prototype.createAuthStateControl = function () {
+        FlowsDataService.prototype.createAuthStateControl = function (authStateLauchedType) {
             var state = this.randomService.createRandom(40);
             var storageObject = {
                 state: state,
                 dateOfLaunchedProcessUtc: new Date().toISOString(),
+                lauchedFrom: authStateLauchedType,
             };
             this.storagePersistanceService.write('authStateControl', JSON.stringify(storageObject));
             return state;
@@ -1795,9 +1804,9 @@
             var anyParameterIsGiven = CALLBACK_PARAMS_TO_CHECK.some(function (x) { return !!_this.getUrlParameter(currentUrl, x); });
             return anyParameterIsGiven;
         };
-        UrlService.prototype.getRefreshSessionSilentRenewUrl = function (customParams) {
+        UrlService.prototype.getRefreshSessionSilentRenewUrl = function (customParams, authStateLauchedType) {
             if (this.flowHelper.isCurrentFlowCodeFlow()) {
-                return this.createUrlCodeFlowWithSilentRenew(customParams);
+                return this.createUrlCodeFlowWithSilentRenew(customParams, authStateLauchedType);
             }
             return this.createUrlImplicitFlowWithSilentRenew(customParams) || '';
         };
@@ -1958,7 +1967,7 @@
             return authorizationUrl + "?" + params;
         };
         UrlService.prototype.createUrlImplicitFlowWithSilentRenew = function (customParams) {
-            var state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+            var state = this.flowsDataService.getExistingOrCreateAuthStateControl('silent-renew-code');
             var nonce = this.flowsDataService.createNonce();
             var silentRenewUrl = this.getSilentRenewUrl();
             if (!silentRenewUrl) {
@@ -1972,8 +1981,10 @@
             this.loggerService.logError('authWellKnownEndpoints is undefined');
             return null;
         };
-        UrlService.prototype.createUrlCodeFlowWithSilentRenew = function (customParams) {
-            var state = this.flowsDataService.createAuthStateControl();
+        UrlService.prototype.createUrlCodeFlowWithSilentRenew = function (customParams, authStateLauchedType) {
+            var state = authStateLauchedType === 'login'
+                ? this.flowsDataService.getExistingOrCreateAuthStateControl(authStateLauchedType)
+                : this.flowsDataService.createAuthStateControl(authStateLauchedType);
             var nonce = this.flowsDataService.createNonce();
             this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + state);
             // code_challenge with "S256"
@@ -1991,7 +2002,7 @@
             return null;
         };
         UrlService.prototype.createUrlImplicitFlowAuthorize = function (customParams) {
-            var state = this.flowsDataService.getExistingOrCreateAuthStateControl();
+            var state = this.flowsDataService.getExistingOrCreateAuthStateControl('login');
             var nonce = this.flowsDataService.createNonce();
             this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
             var redirectUrl = this.getRedirectUrl();
@@ -2006,7 +2017,7 @@
             return null;
         };
         UrlService.prototype.createUrlCodeFlowAuthorize = function (customParams) {
-            var state = this.flowsDataService.createAuthStateControl();
+            var state = this.flowsDataService.getExistingOrCreateAuthStateControl('login');
             var nonce = this.flowsDataService.createNonce();
             this.loggerService.logDebug('Authorize created. adding myautostate: ' + state);
             var redirectUrl = this.getRedirectUrl();
@@ -2642,7 +2653,7 @@
         };
         // STEP 1 Refresh session
         FlowsService.prototype.refreshSessionWithRefreshTokens = function () {
-            var stateData = this.flowsDataService.getExistingOrCreateAuthStateControl();
+            var stateData = this.flowsDataService.getExistingOrCreateAuthStateControl('refresh-token');
             this.loggerService.logDebug('RefreshSession created. adding myautostate: ' + stateData);
             var refreshToken = this.authStateService.getRefreshToken();
             var idToken = this.authStateService.getIdToken();
@@ -2923,11 +2934,19 @@
             this.publicEventsService = publicEventsService;
             this.loggerService = loggerService;
             this._isLeaderSubjectInitialized = false;
+            this._isClosed = false;
             this._silentRenewFinished$ = new rxjs.ReplaySubject(1);
             this._leaderSubjectInitialized$ = new rxjs.ReplaySubject(1);
             this._currentRandomId = Math.random().toString(36).substr(2, 9) + "_" + new Date().getUTCMilliseconds();
             this.Initialization();
         }
+        Object.defineProperty(TabsSynchronizationService.prototype, "isClosed", {
+            get: function () {
+                return this._isClosed;
+            },
+            enumerable: false,
+            configurable: true
+        });
         TabsSynchronizationService.prototype.isLeaderCheck = function () {
             var _this = this;
             this.loggerService.logDebug("isLeaderCheck > prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
@@ -2940,13 +2959,11 @@
                 }))
                     .toPromise();
             }
-            this.loggerService.logDebug("isLeaderCheck > IS LEADER IS ALREADY INITIALIZED SUCCESSFULLY> prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
+            this.loggerService.logDebug("isLeaderCheck > IS LEADER IS ALREADY INITIALIZED > prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
             return new Promise(function (resolve) {
-                setTimeout(function () {
-                    var isLeader = _this._elector.isLeader;
-                    _this.loggerService.logWarning("isLeaderCheck > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId + " > inside setTimeout isLeader = " + isLeader);
-                    resolve(isLeader);
-                }, 1000);
+                var isLeaderResult = _this._elector.isLeader;
+                _this.loggerService.logDebug("isLeaderCheck > isLeader result = " + isLeaderResult + " > prefix: " + _this._prefix + " > currentRandomId: " + _this._currentRandomId);
+                resolve(isLeaderResult);
             });
         };
         TabsSynchronizationService.prototype.getSilentRenewFinishedObservable = function () {
@@ -2958,13 +2975,31 @@
             }
             this._silentRenewFinishedChannel.postMessage("Silent renew finished by _currentRandomId " + this._currentRandomId);
         };
+        TabsSynchronizationService.prototype.closeTabSynchronization = function () {
+            this.loggerService.logWarning("Tab synchronization has been closed > prefix: " + this._prefix + " > currentRandomId: " + this._currentRandomId);
+            this._elector.die();
+            this._silentRenewFinishedChannel.close();
+            this._leaderChannel.close();
+            this._isLeaderSubjectInitialized = false;
+            this._isClosed = true;
+        };
+        TabsSynchronizationService.prototype.reInitialize = function () {
+            this.loggerService.logDebug('TabsSynchronizationService re-initialization process started...');
+            if (!this._isClosed) {
+                throw Error('TabsSynchronizationService cannot be re-initialized when it is not closed.');
+            }
+            this._silentRenewFinished$ = new rxjs.ReplaySubject(1);
+            this._leaderSubjectInitialized$ = new rxjs.ReplaySubject(1);
+            this.Initialization();
+            this._isClosed = false;
+        };
         TabsSynchronizationService.prototype.Initialization = function () {
             var _this = this;
             var _a;
             this.loggerService.logDebug('TabsSynchronizationService > Initialization started');
             this._prefix = ((_a = this.configurationProvider.openIDConfiguration) === null || _a === void 0 ? void 0 : _a.clientId) || '';
-            var channel = new broadcastChannel.BroadcastChannel(this._prefix + "_leader");
-            this._elector = broadcastChannel.createLeaderElection(channel, {
+            this._leaderChannel = new broadcastChannel.BroadcastChannel(this._prefix + "_leader");
+            this._elector = broadcastChannel.createLeaderElection(this._leaderChannel, {
                 fallbackInterval: 2000,
                 responseTime: 1000,
             });
@@ -3272,9 +3307,9 @@
             this.silentRenewService = silentRenewService;
             this.renderer = rendererFactory.createRenderer(null, null);
         }
-        RefreshSessionIframeService.prototype.refreshSessionWithIframe = function (customParams) {
+        RefreshSessionIframeService.prototype.refreshSessionWithIframe = function (customParams, authStateLauchedType) {
             this.loggerService.logDebug('BEGIN refresh session Authorize Iframe renew');
-            var url = this.urlService.getRefreshSessionSilentRenewUrl(customParams);
+            var url = this.urlService.getRefreshSessionSilentRenewUrl(customParams, authStateLauchedType);
             return this.sendAuthorizeReqestUsingSilentRenew(url);
         };
         RefreshSessionIframeService.prototype.sendAuthorizeReqestUsingSilentRenew = function (url) {
@@ -3385,13 +3420,13 @@
             if (currentRetry && currentRetry > MAX_RETRY_ATTEMPTS) {
                 return rxjs.throwError(new Error('Initializatin has been failed. Exceeded max retry attepmts.'));
             }
-            return rxjs.from(this.tabsSynchronizationService.isLeaderCheck()).pipe(operators.take(1), operators.switchMap(function (isLeader) {
+            return rxjs.from(this.tabsSynchronizationService.isLeaderCheck()).pipe(operators.timeout(2000), operators.take(1), operators.switchMap(function (isLeader) {
                 if (isLeader) {
                     _this.loggerService.logDebug("forceRefreshSession WE ARE LEADER");
                     return rxjs.forkJoin([
                         _this.startRefreshSession(customParams),
                         _this.silentRenewService.refreshSessionWithIFrameCompleted$.pipe(operators.take(1)),
-                    ]).pipe(operators.timeout(_this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.map(function (_c) {
+                    ]).pipe(operators.timeout(5000), operators.map(function (_c) {
                         var _d = __read(_c, 2), _ = _d[0], callbackContext = _d[1];
                         var _a, _b;
                         var isAuthenticated = _this.authStateService.areAuthStorageTokensValid();
@@ -3411,26 +3446,14 @@
                             else {
                                 currentRetry = 1;
                             }
-                            return _this.silentRenewCase(customParams, currentRetry);
+                            return _this.silentRenewCase(customParams, currentRetry).pipe(operators.take(1));
                         }
                         throw error;
                     }));
                 }
                 else {
                     _this.loggerService.logDebug("forceRefreshSession WE ARE NOT NOT NOT LEADER");
-                    return _this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(operators.take(1), operators.timeout(_this.configurationProvider.openIDConfiguration.silentRenewTimeoutInSeconds * 1000), operators.catchError(function (error) {
-                        if (error instanceof rxjs.TimeoutError) {
-                            _this.loggerService.logWarning("forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
-                            if (currentRetry) {
-                                currentRetry++;
-                            }
-                            else {
-                                currentRetry = 1;
-                            }
-                            return _this.silentRenewCase(customParams, currentRetry);
-                        }
-                        throw error;
-                    }), operators.map(function () {
+                    return _this.tabsSynchronizationService.getSilentRenewFinishedObservable().pipe(operators.take(1), operators.timeout(5000), operators.map(function () {
                         var isAuthenticated = _this.authStateService.areAuthStorageTokensValid();
                         _this.loggerService.logDebug("forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated = " + isAuthenticated);
                         if (isAuthenticated) {
@@ -3441,8 +3464,32 @@
                         }
                         _this.loggerService.logError("forceRefreshSession WE ARE NOT NOT NOT LEADER > getSilentRenewFinishedObservable EMMITS VALUE > isAuthenticated FALSE WE DONT KNOW WAHT TO DO WITH THIS");
                         return null;
+                    }), operators.catchError(function (error) {
+                        if (error instanceof rxjs.TimeoutError) {
+                            _this.loggerService.logWarning("forceRefreshSession WE ARE NOT NOT NOT LEADER > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
+                            if (currentRetry) {
+                                currentRetry++;
+                            }
+                            else {
+                                currentRetry = 1;
+                            }
+                            return _this.silentRenewCase(customParams, currentRetry).pipe(operators.take(1));
+                        }
+                        throw error;
                     }));
                 }
+            }), operators.catchError(function (error) {
+                if (error instanceof rxjs.TimeoutError) {
+                    _this.loggerService.logWarning("forceRefreshSession > FROM isLeaderCheck > occured TIMEOUT ERROR SO WE RETRY: this.forceRefreshSession(customParams)");
+                    if (currentRetry) {
+                        currentRetry++;
+                    }
+                    else {
+                        currentRetry = 1;
+                    }
+                    return _this.silentRenewCase(customParams, currentRetry);
+                }
+                throw error;
             }));
         };
         RefreshSessionService.prototype.startRefreshSession = function (customParams) {
@@ -3465,7 +3512,7 @@
                     // Refresh Session using Refresh tokens
                     return _this.refreshSessionRefreshTokenService.refreshSessionWithRefreshTokens(customParams);
                 }
-                return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
+                return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams, 'login');
             }));
         };
         return RefreshSessionService;
@@ -3509,6 +3556,10 @@
                 if (!shouldBeExecuted) {
                     return rxjs.of(null);
                 }
+                if (_this.tabsSynchronizationService.isClosed) {
+                    _this.loggerService.logWarning('startTokenValidationPeriodically > this.tabsSynchronizationService.isClosed = TRUE - so we re-initialize');
+                    _this.tabsSynchronizationService.reInitialize();
+                }
                 var idTokenHasExpired = _this.authStateService.hasIdTokenExpired();
                 var accessTokenHasExpired = _this.authStateService.hasAccessTokenExpiredIfExpiryExists();
                 if (!idTokenHasExpired && !accessTokenHasExpired) {
@@ -3528,7 +3579,7 @@
                             // Refresh Session using Refresh tokens
                             return _this.refreshSessionRefreshTokenService.refreshSessionWithRefreshTokens(customParams);
                         }
-                        return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams);
+                        return _this.refreshSessionIframeService.refreshSessionWithIframe(customParams, 'silent-renew-code');
                     }
                     return rxjs.of(null);
                 }));
@@ -3969,7 +4020,7 @@
     })();
 
     var LogoffRevocationService = /** @class */ (function () {
-        function LogoffRevocationService(dataService, storagePersistanceService, loggerService, urlService, checkSessionService, flowsService, redirectService) {
+        function LogoffRevocationService(dataService, storagePersistanceService, loggerService, urlService, checkSessionService, flowsService, redirectService, tabsSynchronizationService) {
             this.dataService = dataService;
             this.storagePersistanceService = storagePersistanceService;
             this.loggerService = loggerService;
@@ -3977,11 +4028,13 @@
             this.checkSessionService = checkSessionService;
             this.flowsService = flowsService;
             this.redirectService = redirectService;
+            this.tabsSynchronizationService = tabsSynchronizationService;
         }
         // Logs out on the server and the local client.
         // If the server state has changed, checksession, then only a local logout.
         LogoffRevocationService.prototype.logoff = function (urlHandler) {
             this.loggerService.logDebug('logoff, remove auth ');
+            this.tabsSynchronizationService.closeTabSynchronization();
             var endSessionUrl = this.getEndSessionUrl();
             this.flowsService.resetAuthorizationData();
             if (!endSessionUrl) {
@@ -3999,6 +4052,7 @@
             }
         };
         LogoffRevocationService.prototype.logoffLocal = function () {
+            this.tabsSynchronizationService.closeTabSynchronization();
             this.flowsService.resetAuthorizationData();
         };
         // The refresh token and and the access token are revoked on the server. If the refresh token does not exist
@@ -4071,12 +4125,12 @@
         };
         return LogoffRevocationService;
     }());
-    LogoffRevocationService.ɵfac = function LogoffRevocationService_Factory(t) { return new (t || LogoffRevocationService)(i0.ɵɵinject(DataService), i0.ɵɵinject(StoragePersistanceService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(UrlService), i0.ɵɵinject(CheckSessionService), i0.ɵɵinject(FlowsService), i0.ɵɵinject(RedirectService)); };
+    LogoffRevocationService.ɵfac = function LogoffRevocationService_Factory(t) { return new (t || LogoffRevocationService)(i0.ɵɵinject(DataService), i0.ɵɵinject(StoragePersistanceService), i0.ɵɵinject(LoggerService), i0.ɵɵinject(UrlService), i0.ɵɵinject(CheckSessionService), i0.ɵɵinject(FlowsService), i0.ɵɵinject(RedirectService), i0.ɵɵinject(TabsSynchronizationService)); };
     LogoffRevocationService.ɵprov = i0.ɵɵdefineInjectable({ token: LogoffRevocationService, factory: LogoffRevocationService.ɵfac });
     /*@__PURE__*/ (function () {
         i0.ɵsetClassMetadata(LogoffRevocationService, [{
                 type: i0.Injectable
-            }], function () { return [{ type: DataService }, { type: StoragePersistanceService }, { type: LoggerService }, { type: UrlService }, { type: CheckSessionService }, { type: FlowsService }, { type: RedirectService }]; }, null);
+            }], function () { return [{ type: DataService }, { type: StoragePersistanceService }, { type: LoggerService }, { type: UrlService }, { type: CheckSessionService }, { type: FlowsService }, { type: RedirectService }, { type: TabsSynchronizationService }]; }, null);
     })();
 
     var OidcSecurityService = /** @class */ (function () {

@@ -8,6 +8,7 @@ export interface MutualExclusionLockingModel {
     yKey: StorageKeys;
     state: string;
 }
+export declare type AuthStateLauchedType = 'login' | 'silent-renew-code' | 'refresh-token';
 export declare class FlowsDataService {
     private storagePersistanceService;
     private randomService;
@@ -16,10 +17,10 @@ export declare class FlowsDataService {
     constructor(storagePersistanceService: StoragePersistanceService, randomService: RandomService, configurationProvider: ConfigurationProvider, loggerService: LoggerService);
     createNonce(): string;
     setNonce(nonce: string): void;
-    getAuthStateControl(): any;
+    getAuthStateControl(authStateLauchedType?: AuthStateLauchedType): any;
     setAuthStateControl(authStateControl: string): void;
-    getExistingOrCreateAuthStateControl(): any;
-    createAuthStateControl(): any;
+    getExistingOrCreateAuthStateControl(authStateLauchedType: AuthStateLauchedType): any;
+    createAuthStateControl(authStateLauchedType: AuthStateLauchedType): any;
     setSessionState(sessionState: any): void;
     resetStorageFlowData(): void;
     getCodeVerifier(): any;
